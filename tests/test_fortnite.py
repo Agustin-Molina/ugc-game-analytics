@@ -120,8 +120,7 @@ def test_events_new_removed_title_tags():
     }
     by = {r["island_code"]: r for r in dim1.iter_rows(named=True)}
     assert by["C"]["is_listed"] is False and by["C"]["title"] == "c"
-    assert by["C"]["last_seen_at"] == T0
-    assert by["A"]["first_seen_at"] == T0 and by["A"]["last_seen_at"] == T1
+    assert by["A"]["first_seen_at"] == T0
     assert by["D"]["first_seen_at"] == T1
 
     # vuelve C → island_relisted
@@ -142,10 +141,10 @@ def test_incomplete_catalog_does_not_remove():
 
 def test_select_today_prioritizes_active():
     dim = pl.DataFrame(
-        {"island_code": ["A", "B", "C", "D"], "is_listed": [True, True, True, False],
-         "last_active_bucket": [None, T0, None, T1]},
+        {"island_code": ["A", "B", "C", "D", "E"], "is_listed": [True, True, True, False, True],
+         "first_traction_at": [None, T0, None, T1, T1]},
     )
-    assert fortnite.select_today(dim, 0, 1) == ["B", "A", "C"]
+    assert fortnite.select_today(dim, 0, 1) == ["E", "B", "A", "C"]
 
 
 # --------------------------------------------------------------------------- end to end
@@ -193,13 +192,14 @@ async def test_run_end_to_end(tmp_path, cfg):
         ("3333-3333-3333", "day"): "not_found",
     }
 
-    dim = read_dimension(tmp_path, "fortnite", fortnite.GAMES_SCHEMA)
+    dim = read_dimension(tmp_path, "fortnite", fortnite.GAMES_SCHEMA, "island_code")
     hot = dim.filter(pl.col("island_code") == "1111-1111-1111").row(0, named=True)
     assert hot["first_traction_at"] == datetime(2026, 11, 9, tzinfo=UTC)  # 139 >= 50; el 8 = 40
-    assert hot["last_active_bucket"] == datetime(2026, 11, 9, tzinfo=UTC)
-    assert hot["last_fetched_at"] is not None
     dead = dim.filter(pl.col("island_code") == "2222-2222-2222").row(0, named=True)
-    assert dead["last_active_bucket"] is None and dead["last_fetched_at"] is not None
+    assert dead["first_traction_at"] is None
+    # log: carga inicial (3 filas) + solo la isla que ganó tracción (1 fila)
+    logs = [pl.read_parquet(f) for f in (tmp_path / "fortnite/games").glob("date=*/*.parquet")]
+    assert [d.height for d in sorted(logs, key=lambda d: d["valid_from"].min())] == [3, 1]
 
     assert summary.ops_failed == 0  # 404 no cuenta como error
     assert summary.exit_code(0.2) == 0

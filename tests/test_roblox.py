@@ -84,7 +84,7 @@ async def test_run_end_to_end(tmp_path, cfg):
     assert adopt["visits"] == 45372596152
     assert adopt["up_votes"] == 383310974 % 1000
 
-    dim = read_dimension(tmp_path, "roblox", roblox.GAMES_SCHEMA)
+    dim = read_dimension(tmp_path, "roblox", roblox.GAMES_SCHEMA, "universe_id")
     assert dim.height == 3
     adopt_dim = dim.filter(pl.col("universe_id") == 383310974).row(0, named=True)
     assert adopt_dim["genre_l2"] == "Pet Care"
@@ -104,7 +104,7 @@ async def test_run_end_to_end(tmp_path, cfg):
 async def test_second_run_detects_events_and_keeps_first_seen(tmp_path, cfg):
     mock_apis()
     await roblox.run(tmp_path, limit=None, dry_run=False, cfg=cfg)
-    dim1 = read_dimension(tmp_path, "roblox", roblox.GAMES_SCHEMA)
+    dim1 = read_dimension(tmp_path, "roblox", roblox.GAMES_SCHEMA, "universe_id")
 
     changed = load("roblox_games.json")
     changed["data"][0]["name"] = "[🔥] Adopt Me!"
@@ -120,9 +120,14 @@ async def test_second_run_detects_events_and_keeps_first_seen(tmp_path, cfg):
     assert name_ev["old_value"] == "[⚡] Adopt Me!"
     assert name_ev["new_value"] == "[🔥] Adopt Me!"
 
-    dim2 = read_dimension(tmp_path, "roblox", roblox.GAMES_SCHEMA)
+    dim2 = read_dimension(tmp_path, "roblox", roblox.GAMES_SCHEMA, "universe_id")
     assert dim2["first_seen_at"].to_list() == dim1["first_seen_at"].to_list()
     assert len(list((tmp_path / "roblox/snapshots").glob("**/*.parquet"))) == 2
+
+    # log append-only: la segunda corrida solo agrega la fila que cambió
+    logs = [pl.read_parquet(f) for f in (tmp_path / "roblox/games").glob("date=*/*.parquet")]
+    assert [d.height for d in sorted(logs, key=lambda d: d["valid_from"].min())] == [3, 1]
+    assert dim2.filter(pl.col("universe_id") == 383310974)["name"].item() == "[🔥] Adopt Me!"
 
 
 @respx.mock

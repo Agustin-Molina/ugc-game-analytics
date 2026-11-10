@@ -29,6 +29,7 @@ from collectors.common import (
     HttpError,
     RateLimiter,
     RunSummary,
+    dimension_changes,
     floor_day,
     floor_hour,
     frame,
@@ -42,11 +43,12 @@ from collectors.common import (
     resolve_data_dir,
     setup_logging,
     utcnow,
-    write_dimension,
+    write_dimension_changes,
     write_partition,
 )
 
 PLATFORM = "fortnite"
+KEY = "island_code"
 log = logging.getLogger("collectors.fortnite")
 
 INTERVALS = {"day": timedelta(days=1), "hour": timedelta(hours=1)}
@@ -99,11 +101,8 @@ GAMES_SCHEMA: dict[str, pl.DataType] = {
     "tags": pl.List(pl.Utf8),
     "genre_unified": pl.Utf8,  # Fase 2
     "first_seen_at": TS,
-    "last_seen_at": TS,
     "is_listed": pl.Boolean,
     "first_traction_at": TS,
-    "last_fetched_at": TS,
-    "last_active_bucket": TS,
     "tier": pl.Utf8,
 }
 CATALOG_FIELDS = ["title", "creator_code", "category", "created_in", "tags"]
@@ -197,7 +196,6 @@ def update_dimension_with_catalog(
         ],
         pl.col("genre_unified"),
         pl.coalesce("first_seen_at", now_lit).alias("first_seen_at"),
-        pl.when(in_cat).then(now_lit).otherwise(pl.col("last_seen_at")).alias("last_seen_at"),
         (
             pl.when(in_cat)
             .then(True)
@@ -207,8 +205,6 @@ def update_dimension_with_catalog(
             .alias("is_listed")
         ),
         "first_traction_at",
-        "last_fetched_at",
-        "last_active_bucket",
         pl.coalesce("tier", pl.lit("warm")).alias("tier"),
     ).sort("island_code")
 
@@ -247,34 +243,23 @@ def update_dimension_with_catalog(
     return new_dim.cast(GAMES_SCHEMA), events.cast(EVENTS_SCHEMA)
 
 
-def apply_fetch_results(
-    dim: pl.DataFrame, fetch_log: pl.DataFrame, snaps: pl.DataFrame, traction_min_ccu: int
-) -> pl.DataFrame:
-    """Actualiza last_fetched_at, last_active_bucket y first_traction_at."""
-    if fetch_log.is_empty():
-        return dim
-    fetched = (
-        fetch_log.filter(pl.col("interval") == "day")
-        .group_by("island_code")
-        .agg(pl.col("snapshot_at").max().alias("_fetched"))
-    )
-    day = snaps.filter(pl.col("interval") == "day")
-    active = day.group_by("island_code").agg(pl.col("bucket_start").max().alias("_active"))
+def apply_traction(dim: pl.DataFrame, snaps: pl.DataFrame, traction_min_ccu: int) -> pl.DataFrame:
+    """first_traction_at = primer bucket diario con peakCCU >= umbral (nunca se mueve hacia
+    adelante). last_seen / last_fetched / last_active NO se guardan: salen de fetch_log y
+    snapshots, y guardarlos reescribiría toda la dimensión cada día."""
     traction = (
-        day.filter(pl.col("peak_ccu") >= traction_min_ccu)
+        snaps.filter((pl.col("interval") == "day") & (pl.col("peak_ccu") >= traction_min_ccu))
         .group_by("island_code")
         .agg(pl.col("bucket_start").min().alias("_traction"))
     )
+    if traction.is_empty():
+        return dim
     out = (
-        dim.join(fetched, on="island_code", how="left")
-        .join(active, on="island_code", how="left")
-        .join(traction, on="island_code", how="left")
+        dim.join(traction, on="island_code", how="left")
         .with_columns(
-            pl.coalesce("_fetched", "last_fetched_at").alias("last_fetched_at"),
-            pl.max_horizontal("last_active_bucket", "_active").alias("last_active_bucket"),
-            pl.min_horizontal("first_traction_at", "_traction").alias("first_traction_at"),
+            pl.min_horizontal("first_traction_at", "_traction").alias("first_traction_at")
         )
-        .drop("_fetched", "_active", "_traction")
+        .drop("_traction")
     )
     return out.cast(GAMES_SCHEMA)
 
@@ -409,12 +394,12 @@ class MetricsFetcher:
 
 
 def select_today(dim: pl.DataFrame, group: int, n_groups: int) -> list[str]:
-    """Islas listadas del grupo; primero las que tuvieron actividad (por si corta el deadline)."""
+    """Islas listadas del grupo; primero las que tuvieron tracción (por si corta el deadline)."""
     listed = dim.filter(pl.col("is_listed"))
     codes = listed["island_code"].to_list()
     mask = [group_of(c, n_groups) == group for c in codes]
     sel = listed.filter(pl.Series(mask, dtype=pl.Boolean))
-    sel = sel.sort(["last_active_bucket", "island_code"], descending=[True, False],
+    sel = sel.sort(["first_traction_at", "island_code"], descending=[True, False],
                    nulls_last=True)
     return sel["island_code"].to_list()
 
@@ -437,23 +422,29 @@ async def run(
     deadline = time.monotonic() + float(fcfg["deadline_minutes"]) * 60
     n_groups = int(fcfg["n_groups"])
     group = group_for_date(started, n_groups) if group is None else group
-    dim = read_dimension(data_dir, PLATFORM, GAMES_SCHEMA)
+    dim = read_dimension(data_dir, PLATFORM, GAMES_SCHEMA, KEY)
+    persisted = [dim]  # último estado escrito al log de la dimensión
     part = [0]
 
-    def write(table: str, df: pl.DataFrame, partitioned: bool = True) -> None:
+    def write(table: str, df: pl.DataFrame) -> None:
         if dry_run:
             summary.rows[table] += df.height
             return
-        if partitioned:
-            path = write_partition(df, data_dir, PLATFORM, table, started, run_id, part[0])
-            summary.add_file(table, path, df.height)
-        else:  # la dimensión se reescribe: contar su tamaño final, no sumar
-            path = write_dimension(df, data_dir, PLATFORM)
-            summary.rows[table] = 0
-            summary.add_file(table, path, df.height)
+        path = write_partition(df, data_dir, PLATFORM, table, started, run_id, part[0])
+        summary.add_file(table, path, df.height)
+
+    def write_dim(new_dim: pl.DataFrame) -> None:
+        """Agrega al log solo las filas nuevas o cambiadas desde la última escritura."""
+        if dry_run:
+            summary.rows["games (cambios dim)"] += dimension_changes(
+                persisted[0], new_dim, KEY).height
+        else:
+            path, n = write_dimension_changes(
+                persisted[0], new_dim, KEY, data_dir, PLATFORM, started, run_id, part[0])
+            summary.add_file("games (cambios dim)", path, n)
+        persisted[0] = new_dim
 
     all_snaps: list[pl.DataFrame] = []
-    all_logs: list[pl.DataFrame] = []
 
     def flush(batch: tuple[list[dict], list[dict]]) -> None:
         snaps = frame(batch[0], SNAPSHOT_SCHEMA)
@@ -462,7 +453,6 @@ async def run(
         write("snapshots", snaps)
         write("fetch_log", logs)
         all_snaps.append(snaps.select("island_code", "interval", "bucket_start", "peak_ccu"))
-        all_logs.append(logs.select("island_code", "interval", "snapshot_at"))
         log.info("flush p%03d: %d filas de snapshots", part[0], snaps.height)
 
     limiter = RateLimiter(float(fcfg["rate_per_s"]), adaptive=True)
@@ -478,7 +468,7 @@ async def run(
                 return summary
             dim, events = update_dimension_with_catalog(dim, catalog, started, complete)
             write("events", events)
-            write("games (dim)", dim, partitioned=False)  # persistir altas/bajas aunque luego falle
+            write_dim(dim)  # persistir altas/bajas aunque después falle algo
             codes = select_today(dim, group, n_groups)
             if limit:
                 codes = codes[:limit]
@@ -491,10 +481,8 @@ async def run(
         flush(fetcher.take())
 
     snaps_all = pl.concat(all_snaps) if all_snaps else pl.DataFrame(schema=SNAPSHOT_SCHEMA)
-    logs_all = pl.concat(all_logs) if all_logs else pl.DataFrame(schema=FETCH_LOG_SCHEMA)
     if codes_override is None:
-        dim = apply_fetch_results(dim, logs_all, snaps_all, int(fcfg["traction_min_ccu"]))
-        write("games (dim)", dim, partitioned=False)
+        write_dim(apply_traction(dim, snaps_all, int(fcfg["traction_min_ccu"])))
 
     n_active = snaps_all.filter(pl.col("interval") == "day")["island_code"].n_unique()
     summary.notes.append(

@@ -12,10 +12,11 @@ from collectors.common import (
     HttpError,
     RateLimiter,
     RunSummary,
+    dimension_changes,
     group_of,
     parse_ts,
     read_dimension,
-    write_dimension,
+    write_dimension_changes,
     write_partition,
 )
 
@@ -114,14 +115,49 @@ def test_partition_uses_utc_date(tmp_path):
     assert "date=2026-11-10" in str(path)
 
 
-def test_dimension_roundtrip_adds_new_columns(tmp_path):
-    schema_v1 = {"id": pl.Int64, "name": pl.Utf8}
-    write_dimension(pl.DataFrame({"id": [1], "name": ["a"]}, schema=schema_v1), tmp_path, "r")
-    schema_v2 = {**schema_v1, "tier": pl.Utf8}
-    df = read_dimension(tmp_path, "r", schema_v2)
-    assert df.columns == ["id", "name", "tier"]
-    assert df["tier"].to_list() == [None]
-    assert read_dimension(tmp_path, "otra", schema_v2).is_empty()
+SCHEMA = {"id": pl.Int64, "name": pl.Utf8, "tags": pl.List(pl.Utf8)}
+
+
+def dim(rows):
+    return pl.DataFrame(rows, schema=SCHEMA)
+
+
+def test_dimension_changes_is_null_safe_and_handles_lists():
+    old = dim([{"id": 1, "name": "a", "tags": ["x"]}, {"id": 2, "name": None, "tags": []}])
+    new = dim([
+        {"id": 1, "name": "a", "tags": ["x"]},     # igual
+        {"id": 2, "name": None, "tags": ["y"]},    # cambia lista (name null == null)
+        {"id": 3, "name": "c", "tags": None},      # nuevo
+    ])
+    assert dimension_changes(old, new, "id")["id"].to_list() == [2, 3]
+    assert dimension_changes(dim([]), new, "id").height == 3
+
+
+def test_dimension_log_append_only_and_current_state(tmp_path):
+    t0 = datetime(2026, 11, 9, 23, tzinfo=UTC)
+    t1 = datetime(2026, 11, 10, 0, tzinfo=UTC)
+    v1 = dim([{"id": 1, "name": "a", "tags": ["x"]}, {"id": 2, "name": "b", "tags": []}])
+    _, n = write_dimension_changes(dim([]), v1, "id", tmp_path, "r", t0, "run1")
+    assert n == 2
+    v2 = v1.with_columns(pl.when(pl.col("id") == 2).then(pl.lit("b2")).otherwise("name")
+                         .alias("name"))
+    path, n = write_dimension_changes(v1, v2, "id", tmp_path, "r", t1, "run2")
+    assert n == 1 and "date=2026-11-10" in str(path)
+    # sin cambios → no escribe archivo
+    assert write_dimension_changes(v2, v2, "id", tmp_path, "r", t1, "run3") == (None, 0)
+
+    state = read_dimension(tmp_path, "r", SCHEMA, "id")
+    assert state.to_dicts() == v2.to_dicts()
+    files = list((tmp_path / "r/games").glob("date=*/*.parquet"))
+    assert len(files) == 2
+    assert "valid_from" in pl.read_parquet(files[0]).columns
+
+    # evolución de esquema: columna nueva → null; columna eliminada → se descarta
+    schema_v2 = {"id": pl.Int64, "name": pl.Utf8, "tier": pl.Utf8}
+    evolved = read_dimension(tmp_path, "r", schema_v2, "id")
+    assert evolved.columns == ["id", "name", "tier"]
+    assert evolved["tier"].to_list() == [None, None]
+    assert read_dimension(tmp_path, "otra", SCHEMA, "id").is_empty()
 
 
 def test_run_summary_exit_code():

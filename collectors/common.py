@@ -285,26 +285,75 @@ def write_partition(
     return path
 
 
-def dimension_path(data_dir: Path, platform: str) -> Path:
-    return data_dir / platform / "games" / "games.parquet"
+# --------------------------------------------------------------------------- dimensiones
+#
+# Las dimensiones (`games`) se guardan como LOG APPEND-ONLY: cada corrida escribe solo las
+# filas nuevas o con algún atributo cambiado, con `valid_from` = momento de la escritura.
+# Estado actual = última fila por id (mayor `valid_from`). Así git no acumula una copia
+# completa de la dimensión en cada corrida. Ver pipeline/db.py para la vista en DuckDB.
+
+DIM_TABLE = "games"
+VALID_FROM = "valid_from"
 
 
-def read_dimension(data_dir: Path, platform: str, schema: dict[str, pl.DataType]) -> pl.DataFrame:
-    path = dimension_path(data_dir, platform)
-    if not path.exists():
-        return pl.DataFrame(schema=schema)
-    df = pl.read_parquet(path)
-    # tolerar columnas nuevas agregadas al esquema después
-    for col, dtype in schema.items():
-        if col not in df.columns:
-            df = df.with_columns(pl.lit(None, dtype=dtype).alias(col))
+def _conform(df: pl.DataFrame, schema: dict[str, pl.DataType]) -> pl.DataFrame:
+    """Alinea un archivo viejo al esquema actual (agrega columnas nuevas como null y
+    descarta las que ya no existen)."""
+    missing = [pl.lit(None, dtype=t).alias(c) for c, t in schema.items() if c not in df.columns]
+    if missing:
+        df = df.with_columns(missing)
     return df.select(list(schema)).cast(schema)
 
 
-def write_dimension(df: pl.DataFrame, data_dir: Path, platform: str) -> Path:
-    path = dimension_path(data_dir, platform)
-    _atomic_write(df, path)
-    return path
+def read_dimension(
+    data_dir: Path, platform: str, schema: dict[str, pl.DataType], key: str
+) -> pl.DataFrame:
+    """Estado actual de la dimensión: última fila por `key` según `valid_from`.
+
+    `schema` describe los atributos (sin `valid_from`)."""
+    files = sorted((data_dir / platform / DIM_TABLE).glob("date=*/*.parquet"))
+    if not files:
+        return pl.DataFrame(schema=schema)
+    full_schema = {**schema, VALID_FROM: TS}
+    log_df = pl.concat([_conform(pl.read_parquet(f), full_schema) for f in files])
+    return (
+        log_df.sort(VALID_FROM, maintain_order=True)
+        .unique(key, keep="last", maintain_order=True)
+        .drop(VALID_FROM)
+        .sort(key)
+    )
+
+
+def dimension_changes(
+    old: pl.DataFrame, new: pl.DataFrame, key: str
+) -> pl.DataFrame:
+    """Filas de `new` que no existen en `old` o con algún atributo distinto (null-safe)."""
+    if old.is_empty():
+        return new
+    attrs = [c for c in new.columns if c != key]
+    old_marked = old.select(new.columns).with_columns(pl.lit(True).alias("__in_old"))
+    joined = new.join(old_marked, on=key, how="left", suffix="__old")
+    changed = pl.any_horizontal([pl.col(c).ne_missing(pl.col(f"{c}__old")) for c in attrs])
+    return joined.filter(pl.col("__in_old").is_null() | changed).select(new.columns)
+
+
+def write_dimension_changes(
+    old: pl.DataFrame,
+    new: pl.DataFrame,
+    key: str,
+    data_dir: Path,
+    platform: str,
+    partition_ts: datetime,
+    run_id: str,
+    part: int | None = None,
+) -> tuple[Path | None, int]:
+    """Agrega al log de la dimensión solo los cambios de `new` respecto de `old`."""
+    changes = dimension_changes(old, new, key)
+    if changes.is_empty():
+        return None, 0
+    changes = changes.with_columns(pl.lit(utcnow(), dtype=TS).alias(VALID_FROM))
+    path = write_partition(changes, data_dir, platform, DIM_TABLE, partition_ts, run_id, part)
+    return path, changes.height
 
 
 def frame(rows: list[dict[str, Any]], schema: dict[str, pl.DataType]) -> pl.DataFrame:

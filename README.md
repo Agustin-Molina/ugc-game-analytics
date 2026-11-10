@@ -45,37 +45,50 @@ de solapamiento.
 Parquet (zstd) particionado: `<plataforma>/<tabla>/date=YYYY-MM-DD/*.parquet`. Todos los
 timestamps en UTC; `snapshot_at` es el momento real de cada respuesta.
 
+Las dimensiones (`games`) son un **log append-only**: cada corrida agrega solo las filas
+nuevas o con algún atributo cambiado, con `valid_from`. El estado actual es la última fila
+por id (vista `<plataforma>_games` en [`pipeline/db.py`](pipeline/db.py)). Así el historial
+de git no guarda una copia completa de la dimensión por corrida. Los campos que cambian
+siempre (último visto, última consulta, última actividad) no se guardan: se derivan de
+`snapshots` / `fetch_log`.
+
 **Roblox**
 - `snapshots` — snapshot_at, universe_id, playing, visits, favorites, up_votes, down_votes,
   updated_at, max_players, price.
 - `chart_positions` — snapshot_at, sort_id, sort_name, rank, universe_id, player_count,
   up_votes, down_votes, is_sponsored.
-- `games/games.parquet` — dimensión (estado actual): nombre, descripción, creador, géneros
-  (`genre_raw`, `genre_l1`, `genre_l2`), fechas, `first_seen_at`, `first_traction_at`, tier.
+- `games` — dimensión (log): nombre, descripción, creador, géneros (`genre_raw`,
+  `genre_l1`, `genre_l2`), created/updated, `first_seen_at`, `first_traction_at`, tier,
+  `valid_from`.
 - `events` — name_change, description_change, update (old/new value).
 
 **Fortnite**
 - `snapshots` — island_code, interval (`day`|`hour`), bucket_start, snapshot_at, is_partial,
   plays, unique_players, peak_ccu, avg_minutes_per_player, minutes_played, favorites,
-  recommendations, retention_d1, retention_d7. Por el solapamiento puede haber varias filas
-  por (isla, bucket): quedarse con el `snapshot_at` más reciente.
+  recommendations, retention_d1, retention_d7 (**fracción 0–1**). Por el solapamiento puede
+  haber varias filas por (isla, bucket): la vista `fortnite_snapshots_latest` se queda con el
+  `snapshot_at` más reciente.
 - `fetch_log` — una fila por consulta (también las islas sin datos) → permite medir
   supervivencia sin sesgo.
-- `games/games.parquet` — dimensión: título, creador, categoría (IP), tags, `first_seen_at`,
-  `last_seen_at`, `is_listed`, `first_traction_at`, `last_active_bucket`, tier.
+- `games` — dimensión (log): título, creador, categoría (IP), tags, `first_seen_at`,
+  `is_listed`, `first_traction_at`, tier, `valid_from`.
 - `events` — island_new, island_removed, island_relisted, title_change, tags_change,
   category_change.
 
 ### Leer con DuckDB
 
 ```python
-import duckdb
-duckdb.sql("""
-    select universe_id, max(playing) as peak
-    from read_parquet('data/roblox/snapshots/**/*.parquet', hive_partitioning = true)
+from pipeline.db import connect
+
+con = connect()  # ./data o $UGC_DATA_DIR; crea vistas para todas las tablas
+con.sql("""
+    select g.name, max(s.playing) as peak
+    from roblox_snapshots s join roblox_games g using (universe_id)
     group by 1 order by peak desc limit 20
 """)
 ```
+
+`uv run python -m pipeline.db` lista las vistas disponibles y sus filas.
 
 ## Correr localmente
 
@@ -112,7 +125,7 @@ Los workflows hacen checkout del repo de datos en `./data` con una deploy key
 ```
 collectors/   common.py (HTTP, reintentos, rate limit, Parquet), roblox.py, fortnite.py
 config/       collectors.yaml
-pipeline/     (fases 1–2) tiers, features, quality, compact
+pipeline/     db.py (vistas DuckDB); fases 1–2: tiers, features, quality, compact
 tests/        pytest + respx, sin red
 scripts/      commit_data.sh
 .github/workflows/

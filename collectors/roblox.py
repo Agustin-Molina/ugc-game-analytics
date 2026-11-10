@@ -28,6 +28,7 @@ from collectors.common import (
     RateLimiter,
     RunSummary,
     chunked,
+    dimension_changes,
     frame,
     load_config,
     new_run_id,
@@ -36,11 +37,12 @@ from collectors.common import (
     resolve_data_dir,
     setup_logging,
     utcnow,
-    write_dimension,
+    write_dimension_changes,
     write_partition,
 )
 
 PLATFORM = "roblox"
+KEY = "universe_id"
 log = logging.getLogger("collectors.roblox")
 
 CHART_SCHEMA: dict[str, pl.DataType] = {
@@ -88,7 +90,6 @@ GAMES_SCHEMA: dict[str, pl.DataType] = {
     "created_at": TS,
     "updated_at": TS,
     "first_seen_at": TS,
-    "last_seen_at": TS,
     "first_traction_at": TS,
     "discovered_via": pl.Utf8,
     "tier": pl.Utf8,
@@ -323,7 +324,6 @@ def update_dimension(
                 row[field] = d[field]
         if meta.get("age_rating"):
             row["age_rating"] = meta["age_rating"]
-        row["last_seen_at"] = d["snapshot_at"]
         if row.get("first_traction_at") is None and (d.get("playing") or 0) >= traction_min_ccu:
             row["first_traction_at"] = d["snapshot_at"]
         current[uid] = row
@@ -339,7 +339,7 @@ async def run(data_dir: Path, limit: int | None, dry_run: bool, cfg: dict) -> Ru
     summary = RunSummary(PLATFORM, run_id)
     started = summary.started_at
     rcfg = cfg["roblox"]
-    dim = read_dimension(data_dir, PLATFORM, GAMES_SCHEMA)
+    dim = read_dimension(data_dir, PLATFORM, GAMES_SCHEMA, KEY)
 
     async with Http(cfg) as http:
         summary.http = http.stats
@@ -368,7 +368,8 @@ async def run(data_dir: Path, limit: int | None, dry_run: bool, cfg: dict) -> Ru
 
     if dry_run:
         for name, df in (("chart_positions", charts_df), ("snapshots", snaps_df),
-                         ("events", events_df), ("games", new_dim)):
+                         ("events", events_df),
+                         ("games (cambios dim)", dimension_changes(dim, new_dim, KEY))):
             summary.rows[name] += df.height
         summary.notes.append("dry-run: no se escribió nada")
         return summary
@@ -377,8 +378,10 @@ async def run(data_dir: Path, limit: int | None, dry_run: bool, cfg: dict) -> Ru
                       ("events", events_df)):
         path = write_partition(df, data_dir, PLATFORM, table, started, run_id)
         summary.add_file(table, path, df.height)
-    path = write_dimension(new_dim, data_dir, PLATFORM)
-    summary.add_file("games (dim)", path, new_dim.height)
+    path, n_changed = write_dimension_changes(
+        dim, new_dim, KEY, data_dir, PLATFORM, started, run_id
+    )
+    summary.add_file("games (cambios dim)", path, n_changed)
     return summary
 
 
