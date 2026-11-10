@@ -42,5 +42,8 @@ roblox:
   search_url: "https://apis.roblox.com/search-api/omni-search"
   rate_search_per_s: 2
   search_slots: 24        # cada keyword se barre 1 vez cada 24 corridas horarias
-  search_max_pages: 15    # 40 resultados/página; más allá casi todo tiene 0 jugadores
+  # 40 resultados/página (fijo); más allá de ~15 casi todo tiene 0 jugadores. Localmente se
+  # pagina sin problemas, pero desde GitHub Actions (2026-11-10) las páginas con pageToken dan
+  # 429 persistente → 1 página hasta diagnosticarlo (workflow debug_search.yml).
+  search_max_pages: 1
   search_min_players: 1   # solo se empiezan a trackear resultados con >= 1 jugador

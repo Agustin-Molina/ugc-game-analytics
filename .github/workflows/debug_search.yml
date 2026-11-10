@@ -1,0 +1,44 @@
+# Diagnóstico temporal: ¿por qué omni-search da 429 al paginar desde Actions?
+# Solo manual. Se borra cuando esté resuelto.
+name: debug_search
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Probar omni-search
+        run: |
+          UA="ugc-game-analytics/0.1 (+https://github.com/Agustin-Molina/ugc-game-analytics)"
+          URL="https://apis.roblox.com/search-api/omni-search"
+          tok() { printf '{"start":%d,"count":40,"endOfPage":false}' "$1" | base64 -w0; }
+          s() {  # s <etiqueta> <keyword> [start]
+            local args=(-G -s -o /tmp/body -D /tmp/h -w "%{http_code}" -A "$UA" "$URL"
+                        --data-urlencode "searchQuery=$2"
+                        --data-urlencode "sessionId=$(cat /proc/sys/kernel/random/uuid)"
+                        --data-urlencode "pageType=all")
+            [ -n "${3:-}" ] && args+=(--data-urlencode "pageToken=$(tok "$3")")
+            local code; code=$(curl "${args[@]}")
+            local rl; rl=$(grep -i '^x-ratelimit' /tmp/h | tr -d '\r' | tr '\n' ' ')
+            echo "$(date -u +%T) $1: $code $rl"
+          }
+          curl -s https://api.ipify.org; echo " (IP del runner)"
+          echo "--- 1) página 2 con token fabricado como PRIMER request"
+          s "p2 tycoon" tycoon 40
+          sleep 3
+          echo "--- 2) páginas 1 de keywords distintas, 1 cada 3 s"
+          for k in obby horror anime simulator racing; do s "p1 $k" "$k"; sleep 3; done
+          echo "--- 3) páginas 2..4 de una keyword, 1 cada 3 s"
+          for st in 40 80 120; do s "start=$st obby" obby "$st"; sleep 3; done
+          echo "--- 4) recuperación: página 2 tras esperas crecientes"
+          for w in 10 30 60 120; do sleep "$w"; s "p2 tras ${w}s" tycoon 40; done
+          echo "--- 5) página 1 al final"
+          s "p1 pet" pet
+          echo "--- cuerpo de la última respuesta"
+          head -c 300 /tmp/body; echo
