@@ -38,12 +38,14 @@ roblox:
   concurrency: 3
   max_sort_pages: 20
   traction_min_ccu: 100   # first_traction_at = primer snapshot con playing >= este valor
-  # Búsqueda por keywords (config/keywords.yaml). Header: 4 req/s.
+  # Búsqueda por keywords (config/keywords.yaml) → collectors/roblox_search.py, 1 vez por día.
+  # Desde IPs de datacenter (GitHub Actions) omni-search permite 1 request/min
+  # (x-ratelimit-limit: 1;w=60, ventana fija; medido 2026-11-10). Localmente, 4/s.
   search_url: "https://apis.roblox.com/search-api/omni-search"
-  rate_search_per_s: 2
-  search_slots: 24        # cada keyword se barre 1 vez cada 24 corridas horarias
-  # 40 resultados/página (fijo); más allá de ~15 casi todo tiene 0 jugadores. Localmente se
-  # pagina sin problemas, pero desde GitHub Actions (2026-11-10) las páginas con pageToken dan
-  # 429 persistente → 1 página hasta diagnosticarlo (workflow debug_search.yml).
-  search_max_pages: 1
-  search_min_players: 1   # solo se empiezan a trackear resultados con >= 1 jugador
+  rate_search_per_s: 0.0164   # 1 cada 61 s
+  search_budget_minutes: 330  # ~325 páginas por corrida (workflow con timeout de 350 min)
+  search_max_pages: 15        # 40 resultados/página; más allá casi todo tiene 0 jugadores
+  # La corrida horaria empieza a trackear resultados recientes con jugadores:
+  search_min_players: 1
+  search_lookback_hours: 48
+  search_new_per_run: 1500    # tope por corrida horaria (el resto entra en las siguientes)

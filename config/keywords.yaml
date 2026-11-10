@@ -1,12 +1,12 @@
 # Barrido de búsqueda de Roblox (omni-search) para ampliar el set trackeado al long tail:
 # así, cuando un juego explota, ya tenemos su historia previa a la tracción.
 #
-# Cada keyword se barre una vez por día: la keyword i entra en la corrida horaria h si
-# i % search_slots == h % search_slots (ver collectors.yaml → roblox.search_*).
-# Agregar o quitar keywords reacomoda los slots; no pasa nada.
+# Las barre collectors/roblox_search.py una vez por día, en anchura (página 1 de todas, después
+# la 2, …) a 1 request/min (límite de omni-search para IPs de datacenter), con presupuesto de
+# tiempo: el orden de la lista importa solo si el presupuesto no alcanza para la página 1.
 #
-# Medido 2026-11-10: la búsqueda ordena por relevancia (sin orden por fecha), ~40 resultados
-# por página y > 40 páginas por keyword; desde la página ~15 casi todo tiene 0 jugadores.
+# Medido 2026-11-10: la búsqueda ordena por relevancia (sin orden por fecha), 40 resultados
+# por página (fijo) y > 40 páginas por keyword; desde la página ~15 casi todo tiene 0 jugadores.
 
 roblox:
   # géneros / mecánicas

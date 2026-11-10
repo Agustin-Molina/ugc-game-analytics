@@ -1,0 +1,64 @@
+name: roblox_search
+
+# Barrido diario de búsqueda por keywords (1 request/min: límite de omni-search para IPs de
+# datacenter). Escribe search_positions; la corrida horaria toma de ahí los juegos nuevos.
+on:
+  workflow_dispatch:
+    inputs:
+      budget_minutes:
+        description: "Presupuesto en minutos (vacío = config, 330)"
+        required: false
+        default: ""
+      max_pages:
+        description: "Máximo de páginas por keyword (vacío = config)"
+        required: false
+        default: ""
+  # Cron desactivado hasta confirmar una corrida manual exitosa.
+  # schedule:
+  #   - cron: "23 6 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: roblox_search
+  cancel-in-progress: false
+
+jobs:
+  search:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v5
+
+      - name: Checkout repo de datos
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ github.repository_owner }}/ugc-game-analytics-data
+          ssh-key: ${{ secrets.DATA_REPO_DEPLOY_KEY }}
+          path: data
+          fetch-depth: 1
+
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Dependencias
+        run: uv sync --frozen --no-dev
+
+      - name: Buscar keywords en Roblox
+        env:
+          UGC_DATA_DIR: data
+          BUDGET: ${{ inputs.budget_minutes }}
+          MAX_PAGES: ${{ inputs.max_pages }}
+        run: |
+          args=()
+          if [ -n "${BUDGET}" ]; then args+=(--budget-minutes "${BUDGET}"); fi
+          if [ -n "${MAX_PAGES}" ]; then args+=(--max-pages "${MAX_PAGES}"); fi
+          uv run --no-dev python -m collectors.roblox_search "${args[@]}"
+
+      - name: Commit y push de datos
+        if: always()
+        run: bash scripts/commit_data.sh data roblox-search

@@ -1,8 +1,8 @@
 """Colector horario de Roblox.
 
 1. Charts de explore (`get-sorts`, device=all, country=all) → `chart_positions`.
-2. Búsqueda por keywords (`config/keywords.yaml`, cada una 1 vez por día) →
-   `search_positions`; los resultados con jugadores que no trackeábamos entran al set.
+2. Descubrimiento: resultados recientes de la búsqueda por keywords (`search_positions`,
+   los escribe `collectors.roblox_search` 1 vez por día) con jugadores y sin trackear.
 3. Universo a consultar = charts ∪ descubiertos ∪ juegos trackeados que tocan según su tier
    (hot: cada hora; warm: diario; cold: semanal; ver `config/tiers.yaml`).
 4. Detalles en lotes de 50 y votos en lotes de 100 → `snapshots`.
@@ -26,7 +26,6 @@ from typing import Any
 import polars as pl
 
 from collectors.common import (
-    ROOT,
     TS,
     Http,
     HttpError,
@@ -49,7 +48,6 @@ from pipeline import tiers
 
 PLATFORM = "roblox"
 KEY = "universe_id"
-KEYWORDS_PATH = ROOT / "config" / "keywords.yaml"
 log = logging.getLogger("collectors.roblox")
 
 CHART_SCHEMA: dict[str, pl.DataType] = {
@@ -100,18 +98,6 @@ GAMES_SCHEMA: dict[str, pl.DataType] = {
     "first_traction_at": TS,
     "discovered_via": pl.Utf8,
     "tier": pl.Utf8,
-}
-
-SEARCH_SCHEMA: dict[str, pl.DataType] = {
-    "snapshot_at": TS,
-    "keyword": pl.Utf8,
-    "rank": pl.Int32,
-    "universe_id": pl.Int64,
-    "root_place_id": pl.Int64,
-    "player_count": pl.Int64,
-    "up_votes": pl.Int64,
-    "down_votes": pl.Int64,
-    "is_sponsored": pl.Boolean,
 }
 
 EVENTS_SCHEMA: dict[str, pl.DataType] = {
@@ -183,75 +169,6 @@ async def fetch_charts(
             break
         params = {**params, "sortsPageToken": token}
     return rows, meta
-
-
-# --------------------------------------------------------------------------- búsqueda
-
-
-def load_keywords(path: Path = KEYWORDS_PATH) -> list[str]:
-    return [str(k) for k in load_config(path)[PLATFORM]]
-
-
-def keywords_due(keywords: list[str], now: datetime, slots: int) -> list[str]:
-    """Keywords de la corrida de `now`: la i-ésima entra cuando i % slots == hora % slots."""
-    hour = int(now.timestamp() // 3600) % slots
-    return [k for i, k in enumerate(keywords) if i % slots == hour]
-
-
-def parse_search_page(
-    payload: dict[str, Any], keyword: str, snapshot_at: datetime, rank_offset: int
-) -> list[dict]:
-    games = [
-        c
-        for group in payload.get("searchResults") or []
-        for c in group.get("contents") or []
-        if c.get("contentType") == "Game" and c.get("universeId")
-    ]
-    return [
-        {
-            "snapshot_at": snapshot_at,
-            "keyword": keyword,
-            "rank": rank_offset + i,
-            "universe_id": g["universeId"],
-            "root_place_id": g.get("rootPlaceId"),
-            "player_count": g.get("playerCount"),
-            "up_votes": g.get("totalUpVotes"),
-            "down_votes": g.get("totalDownVotes"),
-            "is_sponsored": g.get("isSponsored"),
-            "age_rating": g.get("contentMaturity"),
-        }
-        for i, g in enumerate(games, start=1)
-    ]
-
-
-async def fetch_search(
-    http: Http, cfg: dict, keywords: list[str], summary: RunSummary
-) -> list[dict]:
-    """Resultados (hasta search_max_pages páginas) de cada keyword, en orden de ranking."""
-    rcfg = cfg["roblox"]
-    limiter = RateLimiter(rcfg["rate_search_per_s"], adaptive=True)
-    rows: list[dict] = []
-    for kw in keywords:
-        params: dict[str, Any] = {"searchQuery": kw, "sessionId": str(uuid.uuid4()),
-                                  "pageType": "all"}
-        n = 0
-        summary.ops_total += 1  # una operación por keyword (no por página)
-        for _ in range(int(rcfg["search_max_pages"])):
-            try:
-                payload = await http.get_json(rcfg["search_url"], params, limiter)
-            except HttpError as exc:
-                summary.ops_failed += 1
-                summary.error(f"search_{exc.kind}")
-                log.warning("búsqueda %r falló: %s", kw, exc)
-                break
-            page = parse_search_page(payload, kw, utcnow(), n)
-            rows.extend(page)
-            n += len(page)
-            token = payload.get("nextPageToken")
-            if not token:
-                break
-            params = {**params, "pageToken": token}
-    return rows
 
 
 # --------------------------------------------------------------------------- detalles
@@ -438,6 +355,33 @@ def _recent_history(
 
 HISTORY_SNAP_COLS = {"universe_id": pl.Int64, "snapshot_at": TS, "playing": pl.Int64}
 HISTORY_CHART_COLS = {"universe_id": pl.Int64, "snapshot_at": TS}
+SEARCH_COLS = {"universe_id": pl.Int64, "snapshot_at": TS, "keyword": pl.Utf8,
+               "player_count": pl.Int64, "age_rating": pl.Utf8}
+
+
+def discover_from_search(
+    search_hist: pl.DataFrame, known: set[int], rcfg: dict, meta: dict[int, dict]
+) -> list[int]:
+    """IDs de búsqueda recientes, no trackeados, con >= search_min_players jugadores.
+
+    Prioriza por jugadores y limita a search_new_per_run (el resto entra en las corridas
+    siguientes). Registra `discovered_via = search:<keyword>` en `meta`.
+    """
+    if search_hist.is_empty():
+        return []
+    cand = (
+        search_hist.filter(
+            (pl.col("player_count") >= int(rcfg["search_min_players"]))
+            & ~pl.col("universe_id").is_in(list(known))
+        )
+        .sort("player_count", descending=True)
+        .unique("universe_id", keep="first", maintain_order=True)
+        .head(int(rcfg["search_new_per_run"]))
+    )
+    for r in cand.iter_rows(named=True):
+        meta.setdefault(r["universe_id"], {"via": f"search:{r['keyword']}",
+                                           "age_rating": r["age_rating"]})
+    return cand["universe_id"].to_list()
 
 
 async def run(
@@ -446,7 +390,6 @@ async def run(
     dry_run: bool,
     cfg: dict,
     tier_rules: dict | None = None,
-    keywords: list[str] | None = None,
 ) -> RunSummary:
     run_id = new_run_id()
     summary = RunSummary(PLATFORM, run_id)
@@ -458,6 +401,12 @@ async def run(
         data_dir, started - timedelta(days=rules["window_days"])
     )
     last_obs = hist_snaps.group_by(KEY).agg(pl.col("snapshot_at").max().alias("last_at"))
+    search_hist = tiers.read_recent(
+        data_dir, PLATFORM, "search_positions", list(SEARCH_COLS),
+        started - timedelta(hours=float(rcfg["search_lookback_hours"])),
+    )
+    if search_hist is None:
+        search_hist = pl.DataFrame(schema=SEARCH_COLS)
     due, due_counts = tiers.select_due(dim, last_obs, started, rules["cadence"])
 
     async with Http(cfg) as http:
@@ -466,22 +415,13 @@ async def run(
         chart_rows, chart_meta = await fetch_charts(http, cfg, explore_lim, summary)
         chart_ids = list(dict.fromkeys(r["universe_id"] for r in chart_rows))
 
-        kws = keywords_due(keywords if keywords is not None else load_keywords(), started,
-                           int(rcfg["search_slots"]))
-        search_rows = await fetch_search(http, cfg, kws, summary)
-        known = set(dim[KEY].to_list()) | set(chart_ids)
-        min_players = int(rcfg["search_min_players"])
-        search_new: list[int] = []
-        for r in search_rows:  # descubrimientos: no trackeados y con jugadores
-            uid = r["universe_id"]
-            if uid not in known and (r["player_count"] or 0) >= min_players:
-                known.add(uid)
-                search_new.append(uid)
-                chart_meta.setdefault(uid, {"via": f"search:{r['keyword']}",
-                                            "age_rating": r["age_rating"]})
+        search_new = discover_from_search(
+            search_hist, set(dim[KEY].to_list()) | set(chart_ids), rcfg, chart_meta
+        )
         summary.notes.append(
-            f"búsqueda: {len(kws)} keywords ({', '.join(kws) or '-'}) · "
-            f"{len(search_rows)} resultados · {len(search_new)} juegos nuevos a trackear"
+            f"descubiertos por búsqueda: {len(search_new)} "
+            f"(de {search_hist.height} posiciones de las últimas "
+            f"{rcfg['search_lookback_hours']} h)"
         )
 
         ids = list(dict.fromkeys(chart_ids + due + search_new))
@@ -501,7 +441,6 @@ async def run(
         summary.notes.append(f"{missing} ids sin detalle (privados/borrados o lote fallido)")
 
     charts_df = frame(chart_rows, CHART_SCHEMA)
-    search_df = frame(search_rows, SEARCH_SCHEMA)
     snaps_df = build_snapshots(details, votes)
     new_dim, events_df = update_dimension(
         dim, details, chart_meta, started, int(rcfg["traction_min_ccu"])
@@ -528,17 +467,15 @@ async def run(
     )
 
     if dry_run:
-        for name, df in (("chart_positions", charts_df), ("search_positions", search_df),
-                         ("snapshots", snaps_df),
+        for name, df in (("chart_positions", charts_df), ("snapshots", snaps_df),
                          ("events", events_df), ("tier_history", tier_hist_df),
                          ("games (cambios dim)", dimension_changes(dim, new_dim, KEY))):
             summary.rows[name] += df.height
         summary.notes.append("dry-run: no se escribió nada")
         return summary
 
-    for table, df in (("chart_positions", charts_df), ("search_positions", search_df),
-                      ("snapshots", snaps_df), ("events", events_df),
-                      ("tier_history", tier_hist_df)):
+    for table, df in (("chart_positions", charts_df), ("snapshots", snaps_df),
+                      ("events", events_df), ("tier_history", tier_hist_df)):
         path = write_partition(df, data_dir, PLATFORM, table, started, run_id)
         summary.add_file(table, path, df.height)
     path, n_changed = write_dimension_changes(

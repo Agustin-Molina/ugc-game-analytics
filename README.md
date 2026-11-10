@@ -3,7 +3,7 @@
 Dos datasets vivos, recolectados automáticamente con GitHub Actions:
 
 - **Roblox experiences**: snapshots de CCU, visitas, favoritos y votos de todo lo que aparece
-  en los charts de explore y de un barrido diario de búsqueda por keywords (long tail), con
+  en los charts de explore y en un barrido diario de búsqueda por keywords (long tail), con
   cadencia por tier (hot cada hora, warm diario, cold semanal).
 - **Fortnite islands**: métricas diarias (plays, jugadores únicos, peak CCU, minutos,
   favoritos, recomendaciones, retención D1/D7) y curva horaria de las islas con tracción.
@@ -35,7 +35,9 @@ Los datos viven en un repo aparte: **[ugc-game-analytics-data](https://github.co
 | Roblox | `apis.roblox.com/search-api/omni-search?searchQuery=&pageType=all` (40/página, cursor) | descubrimiento por keywords |
 
 Rate limits medidos (no todos documentados): Fortnite ~6 req/s sostenidos; Roblox
-`/v1/games` ~500 IDs cada 30 s (el header dice 300 req/min, pero el límite real es por IDs).
+`/v1/games` ~500 IDs cada 30 s (el header dice 300 req/min, pero el límite real es por IDs);
+omni-search 4 req/s desde una IP residencial pero **1 req/min desde IPs de datacenter**
+(GitHub Actions).
 Todo con reintentos, backoff exponencial con jitter y User-Agent identificable.
 
 **Cobertura de Fortnite sin huecos:** las islas se reparten en 5 grupos por `sha1(code) % 5`
@@ -64,7 +66,7 @@ siempre (último visto, última consulta, última actividad) no se guardan: se d
   `valid_from`.
 - `events` — name_change, description_change, update (old/new value).
 - `search_positions` — snapshot_at, keyword, rank, universe_id, root_place_id, player_count,
-  up_votes, down_votes, is_sponsored (ranking de búsqueda de cada keyword barrida).
+  up_votes, down_votes, is_sponsored, age_rating (ranking de búsqueda por keyword, 1 vez por día).
 - `tier_history` — changed_at, universe_id, from_tier, to_tier, reason (cada cambio de tier).
 
 **Fortnite**
@@ -101,12 +103,17 @@ pero se siguen observando (sin sesgo de supervivencia).
 ### Descubrimiento por keywords (Roblox)
 
 Los charts solo muestran lo que ya está arriba. Para tener historia **antes** de que un juego
-explote, cada hora se barren ~2–3 keywords de [`config/keywords.yaml`](config/keywords.yaml)
-(cada una una vez por día, hasta 15 páginas de 40): las posiciones van a `search_positions` y
-los resultados con ≥ 1 jugador que no trackeábamos entran al set (`discovered_via =
-search:<keyword>`), donde los tiers deciden su cadencia. Medido: la búsqueda ordena por
-relevancia (no por fecha) y casi no muestra juegos de pocos días, así que aporta long tail,
-no lanzamientos del día.
+explote, [`collectors/roblox_search.py`](collectors/roblox_search.py) barre una vez por día
+las keywords de [`config/keywords.yaml`](config/keywords.yaml) y guarda el ranking en
+`search_positions`. La corrida horaria toma de ahí los resultados con ≥ 1 jugador que no
+trackeábamos (hasta 1500 por corrida, priorizando por jugadores; `discovered_via =
+search:<keyword>`) y los tiers deciden su cadencia.
+
+Desde GitHub Actions omni-search permite 1 request por minuto, así que el barrido es un
+workflow aparte de ~5,5 h (≈ 325 páginas de 40): recorre las keywords en anchura (página 1
+de todas, después la 2, …) para que todas queden cubiertas. Medido: la búsqueda ordena por
+relevancia (no por fecha) y casi no muestra juegos de pocos días; aporta long tail, no
+lanzamientos del día.
 
 ### Leer con DuckDB
 
@@ -131,6 +138,7 @@ Requiere [uv](https://docs.astral.sh/uv/).
 uv sync
 uv run pytest
 uv run python -m collectors.roblox --limit 100          # escribe en ./data
+uv run python -m collectors.roblox_search --keywords tycoon,obby --budget-minutes 3
 uv run python -m collectors.fortnite --limit 500
 uv run python -m collectors.fortnite --codes 9782-7008-5547 --dry-run
 ```
@@ -145,7 +153,8 @@ umbrales como `hourly_min_peak_ccu`) en [`config/collectors.yaml`](config/collec
 
 | Workflow | Frecuencia | Qué hace |
 |---|---|---|
-| `roblox_hourly.yml` | cada hora (:17) — **activo** | charts + búsqueda por keywords + detalles y votos de los juegos que tocan por tier |
+| `roblox_hourly.yml` | cada hora (:17) — **activo** | charts + descubiertos por búsqueda + detalles y votos de los juegos que tocan por tier |
+| `roblox_search.yml` | diario (06:23 UTC) | barrido de keywords (~5,5 h, 1 req/min) → `search_positions` |
 | `fortnite_daily.yml` | diario (03:37 UTC) | catálogo + métricas del grupo del día (~3 h) |
 | `keepalive.yml` | mensual | re-habilita los workflows vía API (regla de 60 días) |
 
@@ -156,7 +165,8 @@ Los workflows hacen checkout del repo de datos en `./data` con una deploy key
 ## Estructura
 
 ```
-collectors/   common.py (HTTP, reintentos, rate limit, Parquet), roblox.py, fortnite.py
+collectors/   common.py (HTTP, reintentos, rate limit, Parquet), roblox.py, roblox_search.py,
+              fortnite.py
 config/       collectors.yaml, tiers.yaml, keywords.yaml
 pipeline/     db.py (vistas DuckDB), tiers.py; próximas: quality, compact, features
 tests/        pytest + respx, sin red

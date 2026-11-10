@@ -49,7 +49,13 @@ def read_recent(
     )
     if not files:
         return None
-    df = pl.concat([pl.read_parquet(f, columns=columns) for f in files], how="vertical_relaxed")
+    frames = []
+    for f in files:  # tolera archivos viejos sin alguna columna (evolución de esquema)
+        present = [c for c in columns if c in pl.read_parquet_schema(f)]
+        frames.append(pl.read_parquet(f, columns=present))
+    df = pl.concat(frames, how="diagonal_relaxed")
+    missing = [c for c in columns if c not in df.columns]
+    df = df.with_columns(pl.lit(None).alias(c) for c in missing).select(columns)
     return df.filter(pl.col("snapshot_at") >= since)
 
 

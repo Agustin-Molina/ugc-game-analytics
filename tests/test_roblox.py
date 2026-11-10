@@ -8,8 +8,8 @@ import polars as pl
 import pytest
 import respx
 
-from collectors import roblox
-from collectors.common import load_config, read_dimension
+from collectors import roblox, roblox_search
+from collectors.common import load_config, read_dimension, write_partition
 
 FIX = Path(__file__).parent / "fixtures"
 SORTS = "https://apis.roblox.com/explore-api/v1/get-sorts"
@@ -25,13 +25,8 @@ def load(name: str) -> dict:
 def cfg():
     c = load_config()
     c["http"].update(backoff_base_s=0.0, backoff_cap_s=0.0, throttle_min_pause_s=0.0)
-    c["roblox"].update(games_ids_per_s=1e6, votes_ids_per_s=1e6, rate_explore_per_s=1000,
-                       rate_search_per_s=1000)
+    c["roblox"].update(games_ids_per_s=1e6, votes_ids_per_s=1e6, rate_explore_per_s=1000)
     return c
-
-
-SEARCH = "https://apis.roblox.com/search-api/omni-search"
-EMPTY_SEARCH = {"searchResults": [], "nextPageToken": None}
 
 
 def votes_response(request: httpx.Request) -> httpx.Response:
@@ -56,7 +51,6 @@ def mock_apis():
                                              "roblox_sorts_p1.json"))
 
     respx.get(SORTS).mock(side_effect=sorts)
-    respx.get(SEARCH).mock(return_value=httpx.Response(200, json=EMPTY_SEARCH))
     games = respx.get(url__regex=re.escape(GAMES) + r"\?").mock(side_effect=games_response)
     votes = respx.get(VOTES).mock(side_effect=votes_response)
     return games, votes
@@ -140,25 +134,24 @@ async def test_second_run_detects_events_and_keeps_first_seen(tmp_path, cfg):
     assert dim2.filter(pl.col("universe_id") == 383310974)["name"].item() == "[🔥] Adopt Me!"
 
 
-def test_keywords_due_spreads_over_slots():
-    kws = [f"k{i}" for i in range(58)]
-    t0 = datetime(2026, 11, 10, tzinfo=UTC)
-    seen = [k for h in range(24)
-            for k in roblox.keywords_due(kws, t0 + h * roblox.timedelta(hours=1), 24)]
-    assert sorted(seen) == sorted(kws)  # cada keyword exactamente una vez por día
-    assert roblox.load_keywords()  # config/keywords.yaml válido
-
-
 @respx.mock
-async def test_search_discovers_untracked_games(tmp_path, cfg):
-    cfg["roblox"].update(search_slots=1, search_max_pages=15)
+async def test_discovers_untracked_games_from_search_positions(tmp_path, cfg):
+    cfg["roblox"]["search_new_per_run"] = 2
+    now = roblox.utcnow()
+    pos = roblox_search.frame(
+        [
+            {"snapshot_at": now - roblox.timedelta(hours=3), "keyword": "tycoon", "rank": r,
+             "universe_id": uid, "player_count": pc, "age_rating": "minimal"}
+            for r, (uid, pc) in enumerate(
+                [(5000000001, 50), (383310974, 9), (5000000002, 0), (5000000003, 3),
+                 (5000000004, 1)], start=1)
+        ]
+        + [{"snapshot_at": now - roblox.timedelta(hours=100), "keyword": "old", "rank": 1,
+            "universe_id": 5000000009, "player_count": 999}],  # fuera de la ventana
+        roblox_search.SEARCH_SCHEMA,
+    )
+    write_partition(pos, tmp_path, "roblox", "search_positions", now, "s1")
     mock_apis()
-
-    def search(request: httpx.Request) -> httpx.Response:
-        assert request.url.params["searchQuery"] == "tycoon"
-        page = request.url.params.get("pageToken")
-        return httpx.Response(200, json=load("roblox_search_p2.json" if page else
-                                             "roblox_search_p1.json"))
 
     def games(request: httpx.Request) -> httpx.Response:  # inventa detalles para ids nuevos
         ids = [int(x) for x in request.url.params["universeIds"].split(",")]
@@ -167,25 +160,20 @@ async def test_search_discovers_untracked_games(tmp_path, cfg):
         data = [known.get(i) or {**base[2], "id": i, "name": f"g{i}"} for i in ids]
         return httpx.Response(200, json={"data": data})
 
-    respx.get(SEARCH).mock(side_effect=search)
     games_route = respx.get(url__regex=re.escape(GAMES) + r"\?").mock(side_effect=games)
-    summary = await roblox.run(tmp_path, limit=None, dry_run=False, cfg=cfg,
-                               keywords=["tycoon"])
-
-    pos = pl.read_parquet(tmp_path / "roblox/search_positions/**/*.parquet").sort("rank")
-    assert pos["rank"].to_list() == [1, 2, 3, 4]  # ranking continuo entre páginas
-    assert set(pos["keyword"]) == {"tycoon"}
+    summary = await roblox.run(tmp_path, limit=None, dry_run=False, cfg=cfg)
 
     queried = {int(x) for c in games_route.calls
                for x in c.request.url.params["universeIds"].split(",")}
-    assert {5000000001, 5000000003} <= queried   # descubiertos con jugadores
-    assert 5000000002 not in queried              # 0 jugadores → no se trackea
+    # con jugadores, sin trackear, priorizados por jugadores y con tope 2 por corrida
+    assert {5000000001, 5000000003} <= queried
+    assert not {5000000002, 5000000004, 5000000009} & queried
 
     dim = read_dimension(tmp_path, "roblox", roblox.GAMES_SCHEMA, "universe_id")
     via = dict(zip(dim["universe_id"].to_list(), dim["discovered_via"].to_list(), strict=True))
     assert via[5000000001] == "search:tycoon"
     assert via[383310974] == "chart:top-trending"  # chart tiene prioridad
-    assert any("2 juegos nuevos a trackear" in n for n in summary.notes)
+    assert any("descubiertos por búsqueda: 2" in n for n in summary.notes)
 
 
 @respx.mock
@@ -210,9 +198,8 @@ async def test_batches_respect_api_limits(tmp_path, cfg):
 @respx.mock
 async def test_failed_batch_counts_as_error(tmp_path, cfg):
     respx.get(SORTS).mock(return_value=httpx.Response(200, json=load("roblox_sorts_p2.json")))
-    respx.get(SEARCH).mock(return_value=httpx.Response(200, json=EMPTY_SEARCH))
     respx.get(url__regex=re.escape(GAMES) + r"\?").mock(return_value=httpx.Response(400))
     respx.get(VOTES).mock(side_effect=votes_response)
-    summary = await roblox.run(tmp_path, limit=None, dry_run=True, cfg=cfg, keywords=[])
+    summary = await roblox.run(tmp_path, limit=None, dry_run=True, cfg=cfg)
     assert summary.errors["games_http_400"] == 1
     assert summary.exit_code(0.2) == 1
