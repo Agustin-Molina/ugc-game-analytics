@@ -151,7 +151,7 @@ def test_keywords_due_spreads_over_slots():
 
 @respx.mock
 async def test_search_discovers_untracked_games(tmp_path, cfg):
-    cfg["roblox"]["search_slots"] = 1
+    cfg["roblox"].update(search_slots=1, search_max_pages=15)
     mock_apis()
 
     def search(request: httpx.Request) -> httpx.Response:
