@@ -17,7 +17,7 @@ Los datos viven en un repo aparte: **[ugc-game-analytics-data](https://github.co
 
 | Fase | Estado |
 |---|---|
-| 0 — Colector mínimo | en curso: colectores + tests listos, workflows por `workflow_dispatch` |
+| 0 — Colector mínimo | Roblox: cron horario activo · Fortnite: validando corrida completa en Actions |
 | 1 — Robustez (tiers, calidad, keywords, compactación) | pendiente |
 | 2 — Enriquecimiento | pendiente |
 | 3 — Análisis | pendiente |
@@ -112,7 +112,7 @@ umbrales como `hourly_min_peak_ccu`) en [`config/collectors.yaml`](config/collec
 
 | Workflow | Frecuencia | Qué hace |
 |---|---|---|
-| `roblox_hourly.yml` | cada hora (:17) | charts + detalles + votos |
+| `roblox_hourly.yml` | cada hora (:17) — **activo** | charts + detalles + votos |
 | `fortnite_daily.yml` | diario (03:37 UTC) | catálogo + métricas del grupo del día (~3 h) |
 | `keepalive.yml` | mensual | re-habilita los workflows vía API (regla de 60 días) |
 
