@@ -1,0 +1,30 @@
+name: keepalive
+
+# GitHub desactiva los workflows programados de un repo público tras 60 días sin actividad
+# en el repo. Los commits de datos van a ugc-game-analytics-data, así que este repo puede
+# quedar "inactivo". Re-habilitar los workflows vía API reinicia ese contador, sin commits.
+
+on:
+  workflow_dispatch:
+  # Cron desactivado hasta confirmar. Día 3 de cada mes, 05:41 UTC.
+  # schedule:
+  #   - cron: "41 5 3 * *"
+
+permissions:
+  actions: write
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Re-habilitar workflows (incluido este)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          for wf in fortnite_daily.yml roblox_hourly.yml keepalive.yml; do
+            gh api -X PUT "repos/${REPO}/actions/workflows/${wf}/enable"
+            echo "habilitado: ${wf}"
+          done

@@ -1,0 +1,19 @@
+{
+  "header": {"sorts": null, "layoutData": {}},
+  "sorts": [
+    {"contentType": "Filters", "sortId": "filters_v5", "sortDisplayName": "", "filters": []},
+    {
+      "contentType": "Games", "id": "Top_Trending_V6", "sortId": "top-trending",
+      "sortDisplayName": "Top Trending", "appliedFilters": "device=all,age=all,country=all",
+      "games": [
+        {"universeId": 10766972131, "rootPlaceId": 120219252362013, "name": "Throw Food For Animals",
+         "playerCount": 142881, "totalUpVotes": 73321, "totalDownVotes": 4391, "isSponsored": false,
+         "minimumAge": 0, "contentMaturity": "minimal", "genreL1": "Simulation"},
+        {"universeId": 383310974, "rootPlaceId": 920587237, "name": "[⚡] Adopt Me!",
+         "playerCount": 150671, "totalUpVotes": 9626956, "totalDownVotes": 1516240, "isSponsored": false,
+         "minimumAge": 0, "contentMaturity": "minimal", "genreL1": "Roleplay & Avatar Sim"}
+      ]
+    }
+  ],
+  "nextSortsPageToken": "PAGE2"
+}

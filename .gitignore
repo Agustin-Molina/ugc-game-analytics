@@ -1,0 +1,25 @@
+# Datos: viven en el repo ugc-game-analytics-data (en Actions se hace checkout acá)
+/data/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Secretos / claves (nunca al repo)
+.env
+*.pem
+*_deploy
+*_deploy.pub
+
+# SO / editores
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

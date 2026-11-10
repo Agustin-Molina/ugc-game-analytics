@@ -1,0 +1,64 @@
+name: fortnite_daily
+
+on:
+  workflow_dispatch:
+    inputs:
+      group:
+        description: "Grupo a consultar 0-4 (vacío = el del día)"
+        required: false
+        default: ""
+      limit:
+        description: "Máximo de islas (vacío = todas; solo para pruebas)"
+        required: false
+        default: ""
+  # Cron desactivado hasta confirmar 3 corridas manuales exitosas.
+  # 03:37 UTC: después del cierre del día UTC.
+  # schedule:
+  #   - cron: "37 3 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fortnite_daily
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    # El colector corta solo a las 5 h (deadline_minutes) y guarda lo que tenga.
+    timeout-minutes: 330
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v5
+
+      - name: Checkout repo de datos
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ github.repository_owner }}/ugc-game-analytics-data
+          ssh-key: ${{ secrets.DATA_REPO_DEPLOY_KEY }}
+          path: data
+          fetch-depth: 1
+
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Dependencias
+        run: uv sync --frozen --no-dev
+
+      - name: Colectar Fortnite
+        env:
+          UGC_DATA_DIR: data
+          GROUP: ${{ inputs.group }}
+          LIMIT: ${{ inputs.limit }}
+        run: |
+          args=()
+          if [ -n "${GROUP}" ]; then args+=(--group "${GROUP}"); fi
+          if [ -n "${LIMIT}" ]; then args+=(--limit "${LIMIT}"); fi
+          uv run --no-dev python -m collectors.fortnite "${args[@]}"
+
+      - name: Commit y push de datos
+        if: always()
+        run: bash scripts/commit_data.sh data fortnite

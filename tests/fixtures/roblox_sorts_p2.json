@@ -1,0 +1,17 @@
+{
+  "sorts": [
+    {
+      "contentType": "Games", "sortId": "up-and-coming", "sortDisplayName": "Up-and-Coming",
+      "games": [
+        {"universeId": 994732206, "rootPlaceId": 2753915549, "name": "[🎃] Blox Fruits",
+         "playerCount": 300000, "totalUpVotes": 12846576, "totalDownVotes": 1071421, "isSponsored": true,
+         "contentMaturity": "mild"},
+        {"universeId": 383310974, "rootPlaceId": 920587237, "name": "[⚡] Adopt Me!",
+         "playerCount": 150671, "totalUpVotes": 9626956, "totalDownVotes": 1516240, "isSponsored": false,
+         "contentMaturity": "minimal"}
+      ]
+    },
+    {"contentType": "Songs", "sortId": "music-top-100", "sortDisplayName": "Music Top 100", "games": []}
+  ],
+  "nextSortsPageToken": null
+}

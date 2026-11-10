@@ -1,0 +1,25 @@
+{
+  "data": [
+    {"id": 383310974, "rootPlaceId": 920587237, "name": "[⚡] Adopt Me!",
+     "description": "Adopt and raise pets!", "sourceName": null, "sourceDescription": null,
+     "creator": {"id": 295182, "name": "Uplift Games", "type": "Group", "isRNVAccount": false, "hasVerifiedBadge": true},
+     "price": null, "allowedGearGenres": ["RPG"], "isGenreEnforced": true, "copyingAllowed": false,
+     "playing": 150671, "visits": 45372596152, "maxPlayers": 35,
+     "created": "2017-07-14T19:26:21.347Z", "updated": "2026-11-09T19:00:27.554Z",
+     "genre": "RPG", "genre_l1": "Roleplay & Avatar Sim", "genre_l2": "Pet Care",
+     "favoritedCount": 29858393, "isOfficiallyLicensed": false},
+    {"id": 994732206, "rootPlaceId": 2753915549, "name": "[🎃] Blox Fruits",
+     "description": "Become a master swordsman.",
+     "creator": {"id": 2853626, "name": "Gamer Robot Inc", "type": "Group", "hasVerifiedBadge": true},
+     "price": null, "playing": 300000, "visits": 50000000000, "maxPlayers": 12,
+     "created": "2019-01-16T00:00:00.000Z", "updated": "2026-11-08T10:00:00.000Z",
+     "genre": "All", "genre_l1": "RPG", "genre_l2": "Action RPG",
+     "favoritedCount": 1000000, "isOfficiallyLicensed": false},
+    {"id": 10766972131, "rootPlaceId": 120219252362013, "name": "Throw Food For Animals",
+     "description": "", "creator": {"id": 1, "name": "someone", "type": "User", "hasVerifiedBadge": false},
+     "price": null, "playing": 42, "visits": 1000, "maxPlayers": 20,
+     "created": "2026-10-30T00:00:00Z", "updated": "2026-11-09T00:00:00Z",
+     "genre": "All", "genre_l1": "Simulation", "genre_l2": null,
+     "favoritedCount": 10, "isOfficiallyLicensed": false}
+  ]
+}

@@ -1,0 +1,40 @@
+# Configuración de los colectores. Sin secretos.
+
+user_agent: "ugc-game-analytics/0.1 (+https://github.com/Agustin-Molina/ugc-game-analytics)"
+
+http:
+  timeout_s: 30
+  max_retries: 6          # reintentos ante 429 / 5xx / errores de red
+  backoff_base_s: 1.0     # backoff exponencial con full jitter: U(0, min(cap, base * 2^n))
+  backoff_cap_s: 60
+  throttle_min_pause_s: 1.0  # pausa mínima ante 429 sin Retry-After
+
+run:
+  max_error_rate: 0.2     # si se supera, la corrida termina con exit code 1
+
+fortnite:
+  base_url: "https://api.fortnite.com/ecosystem/v1"
+  page_size: 1000         # máximo aceptado por /islands
+  n_groups: 5             # rotación: cada isla se consulta cada 5 días (la API guarda 7)
+  window_days: 7
+  rate_per_s: 6           # medido: 6 req/s sin 429; 8 req/s ya da algunos
+  concurrency: 6
+  hourly_min_peak_ccu: 50 # bajar métricas `hour` solo si max(peakCCU) diario >= este valor
+  traction_min_ccu: 50    # first_traction_at = primer bucket diario con peakCCU >= este valor
+  deadline_minutes: 300   # corta prolijo antes del timeout de Actions (6 h)
+  flush_every: 10000      # escribe un parquet parcial cada N islas consultadas
+
+roblox:
+  sorts_url: "https://apis.roblox.com/explore-api/v1/get-sorts"
+  games_url: "https://games.roblox.com/v1/games"
+  votes_url: "https://games.roblox.com/v1/games/votes"
+  games_batch: 50         # máximo aceptado por /v1/games
+  votes_batch: 100        # máximo aceptado por /v1/games/votes
+  # El header dice 300 req/min, pero el límite real es por cantidad de IDs:
+  # ~500 IDs cada ~30 s (medido 2026-11-09). 12 IDs/s = un lote de 50 cada ~4 s.
+  games_ids_per_s: 12
+  votes_ids_per_s: 50     # sin 429 observados con 9 lotes de 100 seguidos; adaptativo
+  rate_explore_per_s: 2
+  concurrency: 3
+  max_sort_pages: 20
+  traction_min_ccu: 100   # first_traction_at = primer snapshot con playing >= este valor

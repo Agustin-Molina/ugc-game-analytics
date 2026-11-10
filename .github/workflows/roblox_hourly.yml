@@ -1,0 +1,56 @@
+name: roblox_hourly
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Máximo de juegos a consultar (vacío = todos)"
+        required: false
+        default: ""
+  # Cron desactivado hasta confirmar 3 corridas manuales exitosas.
+  # schedule:
+  #   - cron: "17 * * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: roblox_hourly
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v5
+
+      - name: Checkout repo de datos
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ github.repository_owner }}/ugc-game-analytics-data
+          ssh-key: ${{ secrets.DATA_REPO_DEPLOY_KEY }}
+          path: data
+          fetch-depth: 1
+
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Dependencias
+        run: uv sync --frozen --no-dev
+
+      - name: Colectar Roblox
+        env:
+          UGC_DATA_DIR: data
+          LIMIT: ${{ inputs.limit }}
+        run: |
+          args=()
+          if [ -n "${LIMIT}" ]; then args+=(--limit "${LIMIT}"); fi
+          uv run --no-dev python -m collectors.roblox "${args[@]}"
+
+      - name: Commit y push de datos
+        if: always()
+        run: bash scripts/commit_data.sh data roblox
