@@ -13,9 +13,9 @@ on:
         description: "Máximo de páginas por keyword (vacío = config)"
         required: false
         default: ""
-  # Cron desactivado hasta confirmar una corrida manual exitosa.
-  # schedule:
-  #   - cron: "23 6 * * *"
+  # Activado el 2026-11-10 tras un barrido manual exitoso (315 páginas, 0 errores).
+  schedule:
+    - cron: "23 6 * * *"
 
 permissions:
   contents: read

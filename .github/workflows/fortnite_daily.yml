@@ -11,10 +11,10 @@ on:
         description: "Máximo de islas (vacío = todas; solo para pruebas)"
         required: false
         default: ""
-  # Cron desactivado hasta confirmar 3 corridas manuales exitosas.
+  # Activado el 2026-11-10 tras una corrida completa exitosa (2h42m, 0 errores).
   # 03:37 UTC: después del cierre del día UTC.
-  # schedule:
-  #   - cron: "37 3 * * *"
+  schedule:
+    - cron: "37 3 * * *"
 
 permissions:
   contents: read

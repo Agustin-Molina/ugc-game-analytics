@@ -18,7 +18,7 @@ Los datos viven en un repo aparte: **[ugc-game-analytics-data](https://github.co
 
 | Fase | Estado |
 |---|---|
-| 0 — Colector mínimo | Roblox: cron horario activo · Fortnite: validando corrida completa en Actions |
+| 0 — Colector mínimo | ✅ todos los crons activos (2026-11-10) |
 | 1 — Robustez (tiers, calidad, keywords, compactación) | en curso: tiers y búsqueda por keywords de Roblox listos |
 | 2 — Enriquecimiento | pendiente |
 | 3 — Análisis | pendiente |
@@ -154,9 +154,9 @@ umbrales como `hourly_min_peak_ccu`) en [`config/collectors.yaml`](config/collec
 | Workflow | Frecuencia | Qué hace |
 |---|---|---|
 | `roblox_hourly.yml` | cada hora (:17) — **activo** | charts + descubiertos por búsqueda + detalles y votos de los juegos que tocan por tier |
-| `roblox_search.yml` | diario (06:23 UTC) | barrido de keywords (~5,5 h, 1 req/min) → `search_positions` |
-| `fortnite_daily.yml` | diario (03:37 UTC) | catálogo + métricas del grupo del día (~3 h) |
-| `keepalive.yml` | mensual | re-habilita los workflows vía API (regla de 60 días) |
+| `roblox_search.yml` | diario (06:23 UTC) — **activo** | barrido de keywords (~5,5 h, 1 req/min) → `search_positions` |
+| `fortnite_daily.yml` | diario (03:37 UTC) — **activo** | catálogo + métricas del grupo del día (~3 h) |
+| `keepalive.yml` | mensual (día 3) — **activo** | re-habilita los workflows vía API (regla de 60 días) |
 
 Los workflows hacen checkout del repo de datos en `./data` con una deploy key
 (`DATA_REPO_DEPLOY_KEY`) y commitean ahí. Todos se pueden correr a mano con

@@ -6,9 +6,9 @@ name: keepalive
 
 on:
   workflow_dispatch:
-  # Cron desactivado hasta confirmar. Día 3 de cada mes, 05:41 UTC.
-  # schedule:
-  #   - cron: "41 5 3 * *"
+  # Activado el 2026-11-10. Día 3 de cada mes, 05:41 UTC.
+  schedule:
+    - cron: "41 5 3 * *"
 
 permissions:
   actions: write
