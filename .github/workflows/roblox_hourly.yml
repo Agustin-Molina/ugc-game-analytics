@@ -1,18 +1,31 @@
 name: roblox_hourly
 
+# El cron de GitHub saltea muchas corridas (el 2026-11-10 disparó 2 de 16), así que cada run
+# es un loop (scripts/hourly_loop.sh): corre el colector todas las horas a las :17 durante
+# ~5,5 h, commiteando después de cada corrida, y al final se relanza solo con
+# workflow_dispatch (el GITHUB_TOKEN puede disparar workflow_dispatch). El cron queda como
+# respaldo para retomar la cadena si se corta; si la cadena está corriendo, el run del cron
+# queda en espera y lo reemplaza el siguiente eslabón (la concurrencia evita solapamientos).
+#
+# Para cortar la cadena: cancelar el run en curso (el encadenado no corre si se cancela) y
+# desactivar el workflow si el cron no debe retomarla.
 on:
   workflow_dispatch:
     inputs:
       limit:
-        description: "Máximo de juegos a consultar (vacío = todos)"
+        description: "Máximo de juegos a consultar (vacío = todos). Implica una sola corrida."
         required: false
         default: ""
-  # Activado el 2026-11-10 tras 3 corridas manuales exitosas.
+      once:
+        description: "Una sola corrida, sin loop ni encadenado (pruebas)"
+        type: boolean
+        default: false
   schedule:
-    - cron: "17 * * * *"
+    - cron: "17 */3 * * *"
 
 permissions:
   contents: read
+  actions: write   # para relanzarse con workflow_dispatch
 
 concurrency:
   group: roblox_hourly
@@ -21,7 +34,10 @@ concurrency:
 jobs:
   collect:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 355
+    env:
+      UGC_DATA_DIR: data
+      LOOP: ${{ !inputs.once && (inputs.limit || '') == '' }}
     steps:
       - name: Checkout código
         uses: actions/checkout@v5
@@ -42,15 +58,25 @@ jobs:
       - name: Dependencias
         run: uv sync --frozen --no-dev
 
-      - name: Colectar Roblox
+      - name: Colectar Roblox (una vez)
+        if: env.LOOP != 'true'
         env:
-          UGC_DATA_DIR: data
           LIMIT: ${{ inputs.limit }}
         run: |
           args=()
           if [ -n "${LIMIT}" ]; then args+=(--limit "${LIMIT}"); fi
           uv run --no-dev python -m collectors.roblox "${args[@]}"
 
-      - name: Commit y push de datos
-        if: always()
+      - name: Commit y push de datos (una vez)
+        if: always() && env.LOOP != 'true'
         run: bash scripts/commit_data.sh data roblox
+
+      - name: Colectar Roblox cada hora a las :17 (loop de ~5,5 h)
+        if: env.LOOP == 'true'
+        run: bash scripts/hourly_loop.sh data 17 335
+
+      - name: Encadenar el siguiente run
+        if: ${{ !cancelled() && env.LOOP == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run roblox_hourly.yml --repo "${GITHUB_REPOSITORY}" --ref "${GITHUB_REF_NAME}"
