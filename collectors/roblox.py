@@ -1,9 +1,11 @@
 """Colector horario de Roblox.
 
 1. Charts de explore (`get-sorts`, device=all, country=all) → `chart_positions`.
-2. Universo a consultar = IDs de charts ∪ IDs ya trackeados (dimensión `games`).
+2. Universo a consultar = IDs de charts ∪ juegos trackeados que tocan según su tier
+   (hot: cada hora; warm: diario; cold: semanal; ver `config/tiers.yaml`).
 3. Detalles en lotes de 50 y votos en lotes de 100 → `snapshots`.
-4. Actualiza la dimensión `games` y registra cambios en `events`.
+4. Actualiza la dimensión `games`, registra cambios en `events`, recalcula tiers y registra
+   los cambios de tier en `tier_history`.
 
 Uso: python -m collectors.roblox [--limit N] [--data-dir PATH] [--dry-run]
 """
@@ -15,7 +17,7 @@ import asyncio
 import logging
 import sys
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -40,6 +42,7 @@ from collectors.common import (
     write_dimension_changes,
     write_partition,
 )
+from pipeline import tiers
 
 PLATFORM = "roblox"
 KEY = "universe_id"
@@ -304,7 +307,7 @@ def update_dimension(
         meta = chart_meta.get(uid, {})
         if old is None:
             row = {k: None for k in GAMES_SCHEMA}
-            row.update(universe_id=uid, first_seen_at=now, tier="warm",
+            row.update(universe_id=uid, first_seen_at=now,  # tier: lo asigna pipeline.tiers
                        discovered_via=f"chart:{meta['sort_id']}" if meta else "tracked")
         else:
             row = dict(old)
@@ -334,24 +337,56 @@ def update_dimension(
 # --------------------------------------------------------------------------- main
 
 
-async def run(data_dir: Path, limit: int | None, dry_run: bool, cfg: dict) -> RunSummary:
+def _recent_history(
+    data_dir: Path, since: datetime
+) -> tuple[pl.DataFrame, pl.DataFrame]:
+    """(snapshots, chart_positions) livianos desde `since`, para tiers y selección."""
+    snaps = tiers.read_recent(data_dir, PLATFORM, "snapshots", list(HISTORY_SNAP_COLS), since)
+    charts = tiers.read_recent(data_dir, PLATFORM, "chart_positions",
+                               list(HISTORY_CHART_COLS), since)
+    return (
+        snaps if snaps is not None else pl.DataFrame(schema=HISTORY_SNAP_COLS),
+        charts if charts is not None else pl.DataFrame(schema=HISTORY_CHART_COLS),
+    )
+
+
+HISTORY_SNAP_COLS = {"universe_id": pl.Int64, "snapshot_at": TS, "playing": pl.Int64}
+HISTORY_CHART_COLS = {"universe_id": pl.Int64, "snapshot_at": TS}
+
+
+async def run(
+    data_dir: Path,
+    limit: int | None,
+    dry_run: bool,
+    cfg: dict,
+    tier_rules: dict | None = None,
+) -> RunSummary:
     run_id = new_run_id()
     summary = RunSummary(PLATFORM, run_id)
     started = summary.started_at
     rcfg = cfg["roblox"]
+    rules = tier_rules or tiers.load_rules(PLATFORM)
     dim = read_dimension(data_dir, PLATFORM, GAMES_SCHEMA, KEY)
+    hist_snaps, hist_charts = _recent_history(
+        data_dir, started - timedelta(days=rules["window_days"])
+    )
+    last_obs = hist_snaps.group_by(KEY).agg(pl.col("snapshot_at").max().alias("last_at"))
+    due, due_counts = tiers.select_due(dim, last_obs, started, rules["cadence"])
 
     async with Http(cfg) as http:
         summary.http = http.stats
         explore_lim = RateLimiter(rcfg["rate_explore_per_s"], adaptive=True)
         chart_rows, chart_meta = await fetch_charts(http, cfg, explore_lim, summary)
         chart_ids = list(dict.fromkeys(r["universe_id"] for r in chart_rows))
-        ids = list(dict.fromkeys(chart_ids + dim["universe_id"].to_list()))
+        ids = list(dict.fromkeys(chart_ids + due))
         if limit:
             ids = ids[:limit]
         summary.notes.append(
             f"charts: {len(chart_ids)} juegos únicos · trackeados: {dim.height} · "
             f"consultados: {len(ids)}"
+        )
+        summary.notes.append(
+            "programados por tier: " + " · ".join(f"{k} {v}" for k, v in due_counts.items())
         )
         details, votes = await fetch_details_and_votes(http, cfg, ids, summary)
 
@@ -366,16 +401,35 @@ async def run(data_dir: Path, limit: int | None, dry_run: bool, cfg: dict) -> Ru
     )
     summary.notes.append(f"juegos nuevos en la dimensión: {new_dim.height - dim.height}")
 
+    # tiers con la historia reciente + esta corrida
+    assigned = tiers.assign_roblox_tiers(
+        new_dim,
+        pl.concat([hist_snaps, snaps_df.select(list(HISTORY_SNAP_COLS))]),
+        pl.concat([hist_charts, charts_df.select(list(HISTORY_CHART_COLS))]),
+        started,
+        rules,
+    )
+    tier_hist_df = tiers.tier_changes(dim, assigned, started)
+    new_dim = new_dim.drop("tier").join(
+        assigned.select(KEY, "tier"), on=KEY, how="left"
+    ).select(list(GAMES_SCHEMA))
+    counts = dict(assigned.group_by("tier").len().iter_rows())
+    summary.notes.append(
+        "tiers: " + " · ".join(f"{t} {counts.get(t, 0)}" for t in (tiers.HOT, tiers.WARM,
+                                                                    tiers.COLD))
+        + f" · cambios: {tier_hist_df.height}"
+    )
+
     if dry_run:
         for name, df in (("chart_positions", charts_df), ("snapshots", snaps_df),
-                         ("events", events_df),
+                         ("events", events_df), ("tier_history", tier_hist_df),
                          ("games (cambios dim)", dimension_changes(dim, new_dim, KEY))):
             summary.rows[name] += df.height
         summary.notes.append("dry-run: no se escribió nada")
         return summary
 
     for table, df in (("chart_positions", charts_df), ("snapshots", snaps_df),
-                      ("events", events_df)):
+                      ("events", events_df), ("tier_history", tier_hist_df)):
         path = write_partition(df, data_dir, PLATFORM, table, started, run_id)
         summary.add_file(table, path, df.height)
     path, n_changed = write_dimension_changes(

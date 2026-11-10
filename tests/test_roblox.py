@@ -94,8 +94,12 @@ async def test_run_end_to_end(tmp_path, cfg):
     small = dim.filter(pl.col("universe_id") == 10766972131).row(0, named=True)
     assert small["first_traction_at"] is None  # playing 42 < 100
 
-    # primera corrida: sin eventos
+    # primera corrida: sin eventos; todos vienen de charts → hot, con su tier_history
     assert not list((tmp_path / "roblox").glob("events/**/*.parquet"))
+    assert set(dim["tier"]) == {"hot"}
+    th = pl.read_parquet(tmp_path / "roblox/tier_history/**/*.parquet")
+    assert th.height == 3 and set(th["reason"]) == {"chart"}
+    assert th["from_tier"].is_null().all()
     assert summary.exit_code(0.2) == 0
     assert games_route.call_count == 1 and votes_route.call_count == 1
 

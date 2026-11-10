@@ -18,7 +18,7 @@ Los datos viven en un repo aparte: **[ugc-game-analytics-data](https://github.co
 | Fase | Estado |
 |---|---|
 | 0 — Colector mínimo | Roblox: cron horario activo · Fortnite: validando corrida completa en Actions |
-| 1 — Robustez (tiers, calidad, keywords, compactación) | pendiente |
+| 1 — Robustez (tiers, calidad, keywords, compactación) | en curso: tiers de Roblox listos |
 | 2 — Enriquecimiento | pendiente |
 | 3 — Análisis | pendiente |
 
@@ -61,6 +61,7 @@ siempre (último visto, última consulta, última actividad) no se guardan: se d
   `genre_l1`, `genre_l2`), created/updated, `first_seen_at`, `first_traction_at`, tier,
   `valid_from`.
 - `events` — name_change, description_change, update (old/new value).
+- `tier_history` — changed_at, universe_id, from_tier, to_tier, reason (cada cambio de tier).
 
 **Fortnite**
 - `snapshots` — island_code, interval (`day`|`hour`), bucket_start, snapshot_at, is_partial,
@@ -74,6 +75,24 @@ siempre (último visto, última consulta, última actividad) no se guardan: se d
   `is_listed`, `first_traction_at`, tier, `valid_from`.
 - `events` — island_new, island_removed, island_relisted, title_change, tags_change,
   category_change.
+
+### Tiers de tracking (Roblox)
+
+Para que el set trackeado pueda crecer sin romper el presupuesto horario de la API, cada
+juego tiene un tier ([`config/tiers.yaml`](config/tiers.yaml), lógica en
+[`pipeline/tiers.py`](pipeline/tiers.py)):
+
+| tier | se consulta | criterio (por defecto) |
+|---|---|---|
+| hot | cada hora | en algún chart, playing ≥ 1000, crecimiento ≥ 1,5× en ~24 h (con ≥ 100), o creado hace ≤ 14 días con ≥ 20 — cualquier señal en las últimas 48 h |
+| warm | diario | pico ≥ 20 en 11 días, o en un chart en los últimos 7 días |
+| cold | semanal | el resto (incluye privados/borrados) |
+
+Warm y cold se reparten por hash del id en slots horarios (24 y 168) → carga pareja; los que
+quedaron atrasados por corridas salteadas entran igual. Los juegos de los charts se consultan
+siempre. Cada corrida recalcula los tiers con los snapshots/charts recientes (sin estado
+extra) y registra los cambios en `tier_history`. Los juegos que no despegan bajan a warm/cold
+pero se siguen observando (sin sesgo de supervivencia).
 
 ### Leer con DuckDB
 
@@ -112,7 +131,7 @@ umbrales como `hourly_min_peak_ccu`) en [`config/collectors.yaml`](config/collec
 
 | Workflow | Frecuencia | Qué hace |
 |---|---|---|
-| `roblox_hourly.yml` | cada hora (:17) — **activo** | charts + detalles + votos |
+| `roblox_hourly.yml` | cada hora (:17) — **activo** | charts + detalles + votos de los juegos que tocan por tier |
 | `fortnite_daily.yml` | diario (03:37 UTC) | catálogo + métricas del grupo del día (~3 h) |
 | `keepalive.yml` | mensual | re-habilita los workflows vía API (regla de 60 días) |
 
@@ -124,8 +143,8 @@ Los workflows hacen checkout del repo de datos en `./data` con una deploy key
 
 ```
 collectors/   common.py (HTTP, reintentos, rate limit, Parquet), roblox.py, fortnite.py
-config/       collectors.yaml
-pipeline/     db.py (vistas DuckDB); fases 1–2: tiers, features, quality, compact
+config/       collectors.yaml, tiers.yaml
+pipeline/     db.py (vistas DuckDB), tiers.py; próximas: quality, compact, features
 tests/        pytest + respx, sin red
 scripts/      commit_data.sh
 .github/workflows/

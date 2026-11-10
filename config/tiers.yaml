@@ -1,0 +1,36 @@
+# Reglas de tiers de tracking (lógica en pipeline/tiers.py).
+#
+#   hot   → se consulta en cada corrida (Roblox: cada hora)
+#   warm  → diario
+#   cold  → semanal (para detectar si "despierta")
+#
+# Cada corrida recalcula el tier de todos los juegos con la historia reciente (snapshots +
+# chart_positions de los últimos `window_days`) y registra los cambios en `tier_history`.
+# Los juegos que aparecen en charts se consultan siempre, sea cual sea su tier.
+
+roblox:
+  window_days: 11          # historia que se lee para decidir (> 1,5 semanas para detectar cold atrasados)
+  hold_hours: 48           # sigue hot si tuvo alguna señal hot en este lapso (histéresis)
+
+  hot:                     # basta con cumplir UNA señal dentro de hold_hours
+    chart: true            # apareció en algún chart de explore
+    min_ccu: 1000          # playing >= 1000
+    growth_min_ccu: 100    # crecimiento fuerte: playing >= 100 ...
+    growth_ratio: 1.5      # ... y >= 1,5× el valor observado ~24 h antes
+    growth_min_lag_hours: 20
+    growth_max_lag_hours: 36
+    new_max_age_days: 14   # nuevo con señales: creado hace <= 14 días ...
+    new_min_ccu: 20        # ... y con playing >= 20
+
+  warm:                    # si no es hot; basta con UNA señal dentro de window_days
+    min_ccu: 20            # pico de playing >= 20
+    chart_days: 7          # o apareció en un chart en los últimos 7 días
+
+  # Todo lo demás es cold, incluidos los juegos sin ninguna observación en la ventana
+  # (privados/borrados): se reintentan una vez por semana.
+
+  cadence:                 # qué juegos entran en cada corrida horaria
+    warm_slots: 24         # warm: 1 de cada 24 corridas (por hash del id → carga pareja)
+    cold_slots: 168        # cold: 1 de cada 168 corridas (semanal)
+    overdue_factor: 1.5    # si pasó 1,5× su período sin observarse (corridas salteadas), entra igual
+    max_overdue_per_run: 2000
