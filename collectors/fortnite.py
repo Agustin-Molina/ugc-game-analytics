@@ -424,6 +424,10 @@ async def run(
     group = group_for_date(started, n_groups) if group is None else group
     dim = read_dimension(data_dir, PLATFORM, GAMES_SCHEMA, KEY)
     persisted = [dim]  # último estado escrito al log de la dimensión
+    # Un catálogo recortado (--limit) o códigos sueltos (--codes) son pruebas: si se
+    # persistieran, la próxima corrida completa vería ~287k islas "nuevas" en vez de una
+    # carga inicial. Solo se guardan snapshots y fetch_log.
+    persist_dim = codes_override is None and not limit
     part = [0]
 
     def write(table: str, df: pl.DataFrame) -> None:
@@ -467,8 +471,9 @@ async def run(
                 summary.notes.append("sin catálogo ni dimensión previa: nada que hacer")
                 return summary
             dim, events = update_dimension_with_catalog(dim, catalog, started, complete)
-            write("events", events)
-            write_dim(dim)  # persistir altas/bajas aunque después falle algo
+            if persist_dim:
+                write("events", events)
+                write_dim(dim)  # persistir altas/bajas aunque después falle algo
             codes = select_today(dim, group, n_groups)
             if limit:
                 codes = codes[:limit]
@@ -481,8 +486,10 @@ async def run(
         flush(fetcher.take())
 
     snaps_all = pl.concat(all_snaps) if all_snaps else pl.DataFrame(schema=SNAPSHOT_SCHEMA)
-    if codes_override is None:
+    if persist_dim:
         write_dim(apply_traction(dim, snaps_all, int(fcfg["traction_min_ccu"])))
+    else:
+        summary.notes.append("prueba (--limit/--codes): dimensión y events no se persisten")
 
     n_active = snaps_all.filter(pl.col("interval") == "day")["island_code"].n_unique()
     summary.notes.append(

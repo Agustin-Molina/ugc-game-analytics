@@ -208,6 +208,25 @@ async def test_run_end_to_end(tmp_path, cfg):
 
 
 @respx.mock
+async def test_limited_run_does_not_persist_dimension(tmp_path, cfg):
+    page = {"links": {"next": "/x"}, "meta": {"page": {"nextCursor": "CUR1"}},
+            "data": [island("1111-1111-1111", "hot one"), island("2222-2222-2222", "x")]}
+    respx.get(f"{BASE}/islands").mock(return_value=httpx.Response(200, json=page))
+    respx.get(url__regex=rf"{BASE}/islands/.+/metrics/day").mock(
+        return_value=httpx.Response(200, json=metrics_day()))
+    respx.get(url__regex=rf"{BASE}/islands/.+/metrics/hour").mock(
+        return_value=httpx.Response(200, json=hour_metrics()))
+
+    summary = await fortnite.run(tmp_path, cfg, group=0, limit=2)
+
+    assert list((tmp_path / "fortnite").glob("snapshots/**/*.parquet"))
+    # un catálogo recortado no puede pasar por carga inicial de la dimensión
+    assert not list((tmp_path / "fortnite").glob("games/**/*.parquet"))
+    assert not list((tmp_path / "fortnite").glob("events/**/*.parquet"))
+    assert any("no se persisten" in n for n in summary.notes)
+
+
+@respx.mock
 async def test_hourly_threshold_is_configurable(tmp_path, cfg):
     cfg["fortnite"]["hourly_min_peak_ccu"] = 500
     respx.get(f"{BASE}/islands/1111-1111-1111/metrics/day").mock(
