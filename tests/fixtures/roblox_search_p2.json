@@ -1,0 +1,48 @@
+{
+ "searchResults": [
+  {
+   "contentGroupType": "Game",
+   "topicId": "Invalid",
+   "contents": [
+    {
+     "universeId": 5000000002,
+     "name": "Dead Tycoon",
+     "description": "",
+     "playerCount": 0,
+     "totalUpVotes": 10,
+     "totalDownVotes": 1,
+     "isSponsored": false,
+     "rootPlaceId": 7002,
+     "contentMaturity": "minimal",
+     "contentType": "Game",
+     "contentId": 5000000002
+    }
+   ]
+  },
+  {
+   "contentGroupType": "Game",
+   "topicId": "Invalid",
+   "contents": [
+    {
+     "universeId": 5000000003,
+     "name": "Small Tycoon",
+     "description": "",
+     "playerCount": 3,
+     "totalUpVotes": 10,
+     "totalDownVotes": 1,
+     "isSponsored": false,
+     "rootPlaceId": 7003,
+     "contentMaturity": "minimal",
+     "contentType": "Game",
+     "contentId": 5000000003
+    }
+   ]
+  }
+ ],
+ "nextPageToken": null,
+ "filteredSearchQuery": null,
+ "vertical": "Game",
+ "sorts": [],
+ "paginationMethod": "Scroll",
+ "sdui": null
+}

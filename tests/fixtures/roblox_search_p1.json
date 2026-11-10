@@ -1,0 +1,48 @@
+{
+ "searchResults": [
+  {
+   "contentGroupType": "Game",
+   "topicId": "Invalid",
+   "contents": [
+    {
+     "universeId": 5000000001,
+     "name": "New Tycoon",
+     "description": "",
+     "playerCount": 50,
+     "totalUpVotes": 10,
+     "totalDownVotes": 1,
+     "isSponsored": false,
+     "rootPlaceId": 7001,
+     "contentMaturity": "minimal",
+     "contentType": "Game",
+     "contentId": 5000000001
+    }
+   ]
+  },
+  {
+   "contentGroupType": "Game",
+   "topicId": "Invalid",
+   "contents": [
+    {
+     "universeId": 383310974,
+     "name": "[⚡] Adopt Me!",
+     "description": "",
+     "playerCount": 150000,
+     "totalUpVotes": 10,
+     "totalDownVotes": 1,
+     "isSponsored": false,
+     "rootPlaceId": 920587237,
+     "contentMaturity": "minimal",
+     "contentType": "Game",
+     "contentId": 383310974
+    }
+   ]
+  }
+ ],
+ "nextPageToken": "eyJzdGFydCI6NDB9",
+ "filteredSearchQuery": null,
+ "vertical": "Game",
+ "sorts": [],
+ "paginationMethod": "Scroll",
+ "sdui": null
+}

@@ -26,7 +26,7 @@ from collectors.common import resolve_data_dir
 
 DIMENSION_KEYS = {"roblox": "universe_id", "fortnite": "island_code"}
 FACT_TABLES = {
-    "roblox": ["snapshots", "chart_positions", "events", "tier_history"],
+    "roblox": ["snapshots", "chart_positions", "search_positions", "events", "tier_history"],
     "fortnite": ["snapshots", "fetch_log", "events"],
 }
 

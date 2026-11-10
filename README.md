@@ -2,8 +2,9 @@
 
 Dos datasets vivos, recolectados automáticamente con GitHub Actions:
 
-- **Roblox experiences**: snapshot horario de CCU, visitas, favoritos y votos de todo lo que
-  aparece en los charts de explore + todo lo ya trackeado.
+- **Roblox experiences**: snapshots de CCU, visitas, favoritos y votos de todo lo que aparece
+  en los charts de explore y de un barrido diario de búsqueda por keywords (long tail), con
+  cadencia por tier (hot cada hora, warm diario, cold semanal).
 - **Fortnite islands**: métricas diarias (plays, jugadores únicos, peak CCU, minutos,
   favoritos, recomendaciones, retención D1/D7) y curva horaria de las islas con tracción.
 
@@ -18,7 +19,7 @@ Los datos viven en un repo aparte: **[ugc-game-analytics-data](https://github.co
 | Fase | Estado |
 |---|---|
 | 0 — Colector mínimo | Roblox: cron horario activo · Fortnite: validando corrida completa en Actions |
-| 1 — Robustez (tiers, calidad, keywords, compactación) | en curso: tiers de Roblox listos |
+| 1 — Robustez (tiers, calidad, keywords, compactación) | en curso: tiers y búsqueda por keywords de Roblox listos |
 | 2 — Enriquecimiento | pendiente |
 | 3 — Análisis | pendiente |
 
@@ -31,6 +32,7 @@ Los datos viven en un repo aparte: **[ugc-game-analytics-data](https://github.co
 | Roblox | `apis.roblox.com/explore-api/v1/get-sorts` (`device=all&country=all`) | ~26 charts (Top Trending, Up-and-Coming, …) |
 | Roblox | `games.roblox.com/v1/games?universeIds=` (lotes de 50) | detalles: playing, visits, favoritos, género |
 | Roblox | `games.roblox.com/v1/games/votes?universeIds=` (lotes de 100) | likes / dislikes |
+| Roblox | `apis.roblox.com/search-api/omni-search?searchQuery=&pageType=all` (40/página, cursor) | descubrimiento por keywords |
 
 Rate limits medidos (no todos documentados): Fortnite ~6 req/s sostenidos; Roblox
 `/v1/games` ~500 IDs cada 30 s (el header dice 300 req/min, pero el límite real es por IDs).
@@ -61,6 +63,8 @@ siempre (último visto, última consulta, última actividad) no se guardan: se d
   `genre_l1`, `genre_l2`), created/updated, `first_seen_at`, `first_traction_at`, tier,
   `valid_from`.
 - `events` — name_change, description_change, update (old/new value).
+- `search_positions` — snapshot_at, keyword, rank, universe_id, root_place_id, player_count,
+  up_votes, down_votes, is_sponsored (ranking de búsqueda de cada keyword barrida).
 - `tier_history` — changed_at, universe_id, from_tier, to_tier, reason (cada cambio de tier).
 
 **Fortnite**
@@ -93,6 +97,16 @@ quedaron atrasados por corridas salteadas entran igual. Los juegos de los charts
 siempre. Cada corrida recalcula los tiers con los snapshots/charts recientes (sin estado
 extra) y registra los cambios en `tier_history`. Los juegos que no despegan bajan a warm/cold
 pero se siguen observando (sin sesgo de supervivencia).
+
+### Descubrimiento por keywords (Roblox)
+
+Los charts solo muestran lo que ya está arriba. Para tener historia **antes** de que un juego
+explote, cada hora se barren ~2–3 keywords de [`config/keywords.yaml`](config/keywords.yaml)
+(cada una una vez por día, hasta 15 páginas de 40): las posiciones van a `search_positions` y
+los resultados con ≥ 1 jugador que no trackeábamos entran al set (`discovered_via =
+search:<keyword>`), donde los tiers deciden su cadencia. Medido: la búsqueda ordena por
+relevancia (no por fecha) y casi no muestra juegos de pocos días, así que aporta long tail,
+no lanzamientos del día.
 
 ### Leer con DuckDB
 
@@ -131,7 +145,7 @@ umbrales como `hourly_min_peak_ccu`) en [`config/collectors.yaml`](config/collec
 
 | Workflow | Frecuencia | Qué hace |
 |---|---|---|
-| `roblox_hourly.yml` | cada hora (:17) — **activo** | charts + detalles + votos de los juegos que tocan por tier |
+| `roblox_hourly.yml` | cada hora (:17) — **activo** | charts + búsqueda por keywords + detalles y votos de los juegos que tocan por tier |
 | `fortnite_daily.yml` | diario (03:37 UTC) | catálogo + métricas del grupo del día (~3 h) |
 | `keepalive.yml` | mensual | re-habilita los workflows vía API (regla de 60 días) |
 
@@ -143,7 +157,7 @@ Los workflows hacen checkout del repo de datos en `./data` con una deploy key
 
 ```
 collectors/   common.py (HTTP, reintentos, rate limit, Parquet), roblox.py, fortnite.py
-config/       collectors.yaml, tiers.yaml
+config/       collectors.yaml, tiers.yaml, keywords.yaml
 pipeline/     db.py (vistas DuckDB), tiers.py; próximas: quality, compact, features
 tests/        pytest + respx, sin red
 scripts/      commit_data.sh

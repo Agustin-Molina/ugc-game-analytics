@@ -1,0 +1,71 @@
+# Barrido de búsqueda de Roblox (omni-search) para ampliar el set trackeado al long tail:
+# así, cuando un juego explota, ya tenemos su historia previa a la tracción.
+#
+# Cada keyword se barre una vez por día: la keyword i entra en la corrida horaria h si
+# i % search_slots == h % search_slots (ver collectors.yaml → roblox.search_*).
+# Agregar o quitar keywords reacomoda los slots; no pasa nada.
+#
+# Medido 2026-11-10: la búsqueda ordena por relevancia (sin orden por fecha), ~40 resultados
+# por página y > 40 páginas por keyword; desde la página ~15 casi todo tiene 0 jugadores.
+
+roblox:
+  # géneros / mecánicas
+  - obby
+  - tycoon
+  - simulator
+  - tower defense
+  - horror
+  - anime
+  - rng
+  - incremental
+  - idle
+  - clicker
+  - roleplay
+  - life
+  - school
+  - hangout
+  - survival
+  - battlegrounds
+  - fighting
+  - pvp
+  - shooter
+  - racing
+  - driving
+  - parkour
+  - escape
+  - story
+  - puzzle
+  - find the
+  - sandbox
+  - building
+  - pet
+  - fishing
+  - farming
+  - mining
+  - cooking
+  - restaurant
+  - zombie
+  - dungeon
+  - rpg
+  - adventure
+  - open world
+  - soccer
+  - basketball
+  - minigames
+  - difficulty chart
+  - prison
+  - hide and seek
+  - murder mystery
+  - merge
+  - gacha
+  # tendencias / formatos de título
+  - brainrot
+  - steal a
+  - grow a
+  - 99 nights
+  - "[NEW]"
+  - "[UPD]"
+  - new
+  - release
+  - beta
+  - "2 player"
