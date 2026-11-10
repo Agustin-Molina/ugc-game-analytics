@@ -5,10 +5,10 @@ name: quality_daily
 # igual en <plataforma>/quality/ del repo de datos.
 on:
   workflow_dispatch:
-  # Cron desactivado hasta confirmar. 12:53 UTC: después de Fortnite (~06:20) y del barrido
+  # Activado el 2026-11-10. 12:53 UTC: después de Fortnite (~06:20) y del barrido
   # de búsqueda (~11:45).
-  # schedule:
-  #   - cron: "53 12 * * *"
+  schedule:
+    - cron: "53 12 * * *"
 
 permissions:
   contents: read

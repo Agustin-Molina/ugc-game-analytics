@@ -179,7 +179,7 @@ umbrales como `hourly_min_peak_ccu`) en [`config/collectors.yaml`](config/collec
 | `roblox_hourly.yml` | cada hora (:17) — **activo** | charts + descubiertos por búsqueda + detalles y votos de los juegos que tocan por tier |
 | `roblox_search.yml` | diario (06:23 UTC) — **activo** | barrido de keywords (~5,5 h, 1 req/min) → `search_positions` |
 | `fortnite_daily.yml` | diario (03:37 UTC) — **activo** | catálogo + métricas del grupo del día (~3 h) |
-| `quality_daily.yml` | diario (12:53 UTC) | checks de calidad → `quality`; falla si hay errores |
+| `quality_daily.yml` | diario (12:53 UTC) — **activo** | checks de calidad → `quality`; falla si hay errores |
 | `keepalive.yml` | mensual (día 3) — **activo** | re-habilita los workflows vía API (regla de 60 días) |
 
 Los workflows hacen checkout del repo de datos en `./data` con una deploy key
