@@ -19,7 +19,7 @@ Los datos viven en un repo aparte: **[ugc-game-analytics-data](https://github.co
 | Fase | Estado |
 |---|---|
 | 0 — Colector mínimo | ✅ todos los crons activos (2026-11-10) |
-| 1 — Robustez (tiers, calidad, keywords, compactación) | en curso: tiers y búsqueda por keywords de Roblox listos |
+| 1 — Robustez (tiers, calidad, keywords, compactación) | en curso: tiers y búsqueda por keywords de Roblox y checks de calidad listos |
 | 2 — Enriquecimiento | pendiente |
 | 3 — Análisis | pendiente |
 
@@ -82,6 +82,9 @@ siempre (último visto, última consulta, última actividad) no se guardan: se d
 - `events` — island_new, island_removed, island_relisted, title_change, tags_change,
   category_change.
 
+**Ambas:** `quality` — checked_at, check, status (ok/warn/error/skip), value, unit,
+warn_above, error_above, detail (resultado diario de los checks de calidad).
+
 ### Tiers de tracking (Roblox)
 
 Para que el set trackeado pueda crecer sin romper el presupuesto horario de la API, cada
@@ -115,6 +118,25 @@ de todas, después la 2, …) para que todas queden cubiertas. Medido: la búsqu
 relevancia (no por fecha) y casi no muestra juegos de pocos días; aporta long tail, no
 lanzamientos del día.
 
+### Checks de calidad
+
+[`pipeline/quality.py`](pipeline/quality.py) corre una vez por día y revisa, con umbrales en
+[`config/quality.yaml`](config/quality.yaml):
+
+- **continuidad**: hueco máximo entre corridas horarias de Roblox, juegos atrasados respecto
+  de la cadencia de su tier, antigüedad del último barrido de búsqueda y de la última corrida
+  de Fortnite, islas del grupo del día sin consultar, e islas sin consulta en 6 días (la API
+  ya borró parte de su historia);
+- **valores imposibles**: negativos, retención fuera de [0, 1], peak CCU > jugadores únicos,
+  minutos por jugador mayores que el bucket, visitas que bajan;
+- **duplicados** en snapshots y en el log de dimensiones, nulls y snapshots sin juego en la
+  dimensión.
+
+Cada check da ✅ ok / ⚠️ warn / ❌ error (o ⏭️ skip si falta historia). El resultado queda en
+el Step Summary y en la tabla `quality`. Con algún error el workflow falla, así GitHub avisa
+por mail. Hallazgo: la API de Roblox devuelve `favoritedCount` negativo en algunos juegos.
+Se guarda tal cual y queda como aviso.
+
 ### Leer con DuckDB
 
 ```python
@@ -141,6 +163,7 @@ uv run python -m collectors.roblox --limit 100          # escribe en ./data
 uv run python -m collectors.roblox_search --keywords tycoon,obby --budget-minutes 3
 uv run python -m collectors.fortnite --limit 500
 uv run python -m collectors.fortnite --codes 9782-7008-5547 --dry-run
+uv run python -m pipeline.quality --no-write            # checks de calidad sobre ./data
 ```
 
 `--data-dir` (o `UGC_DATA_DIR`) cambia la carpeta de salida. Configuración (tasas, lotes,
@@ -156,6 +179,7 @@ umbrales como `hourly_min_peak_ccu`) en [`config/collectors.yaml`](config/collec
 | `roblox_hourly.yml` | cada hora (:17) — **activo** | charts + descubiertos por búsqueda + detalles y votos de los juegos que tocan por tier |
 | `roblox_search.yml` | diario (06:23 UTC) — **activo** | barrido de keywords (~5,5 h, 1 req/min) → `search_positions` |
 | `fortnite_daily.yml` | diario (03:37 UTC) — **activo** | catálogo + métricas del grupo del día (~3 h) |
+| `quality_daily.yml` | diario (12:53 UTC) | checks de calidad → `quality`; falla si hay errores |
 | `keepalive.yml` | mensual (día 3) — **activo** | re-habilita los workflows vía API (regla de 60 días) |
 
 Los workflows hacen checkout del repo de datos en `./data` con una deploy key
@@ -168,7 +192,7 @@ Los workflows hacen checkout del repo de datos en `./data` con una deploy key
 collectors/   common.py (HTTP, reintentos, rate limit, Parquet), roblox.py, roblox_search.py,
               fortnite.py
 config/       collectors.yaml, tiers.yaml, keywords.yaml
-pipeline/     db.py (vistas DuckDB), tiers.py; próximas: quality, compact, features
+pipeline/     db.py (vistas DuckDB), tiers.py, quality.py; próximas: compact, features
 tests/        pytest + respx, sin red
 scripts/      commit_data.sh
 .github/workflows/

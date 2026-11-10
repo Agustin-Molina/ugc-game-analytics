@@ -1,0 +1,51 @@
+name: quality_daily
+
+# Checks de calidad de datos (pipeline/quality.py, umbrales en config/quality.yaml).
+# Si algún check da error, el workflow falla → GitHub avisa por mail. El resultado se guarda
+# igual en <plataforma>/quality/ del repo de datos.
+on:
+  workflow_dispatch:
+  # Cron desactivado hasta confirmar. 12:53 UTC: después de Fortnite (~06:20) y del barrido
+  # de búsqueda (~11:45).
+  # schedule:
+  #   - cron: "53 12 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality_daily
+  cancel-in-progress: false
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v5
+
+      - name: Checkout repo de datos
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ github.repository_owner }}/ugc-game-analytics-data
+          ssh-key: ${{ secrets.DATA_REPO_DEPLOY_KEY }}
+          path: data
+          fetch-depth: 1
+
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Dependencias
+        run: uv sync --frozen --no-dev
+
+      - name: Checks de calidad
+        env:
+          UGC_DATA_DIR: data
+        run: uv run --no-dev python -m pipeline.quality
+
+      - name: Commit y push de datos
+        if: always()
+        run: bash scripts/commit_data.sh data quality
