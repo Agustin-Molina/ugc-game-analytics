@@ -4,7 +4,8 @@
 # corridas, el loop no.
 #
 # Un workflow se lanza si pasó su hora + GRACE_MIN (90) y no tiene ningún run creado hoy
-# (UTC). El margen evita duplicados si el cron dispara tarde. Los semanales llevan el día
+# (UTC). Si el cron dispara tarde igual, el job `guard` de cada workflow
+# (scripts/ran_today.sh) saltea esa segunda corrida. Los semanales llevan el día
 # de la semana (0 = domingo, como `date +%w`) y solo se miran ese día.
 #
 # Uso: scripts/dispatch_missed.sh   (necesita GH_TOKEN y GITHUB_REPOSITORY)

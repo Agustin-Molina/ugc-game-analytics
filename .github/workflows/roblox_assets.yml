@@ -22,7 +22,27 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Si el cron llega tarde y hoy ya corrió (lo lanzó dispatch_missed.sh), no repetir.
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      skip: ${{ steps.guard.outputs.skip }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: scripts
+      - id: guard
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ran_today.sh
+
   assets:
+    needs: guard
+    if: needs.guard.outputs.skip != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:

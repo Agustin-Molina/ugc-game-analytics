@@ -7,7 +7,8 @@ from pipeline import compact
 from pipeline.db import connect
 
 NOW = datetime.now(UTC)
-OLD = NOW - timedelta(days=5)
+# a medianoche: las corridas de OLD + 0..5 h tienen que caer en la misma partición
+OLD = (NOW - timedelta(days=5)).replace(hour=0, minute=0, second=0, microsecond=0)
 SCHEMA = {"snapshot_at": TS, "universe_id": pl.Int64, "playing": pl.Int64}
 
 

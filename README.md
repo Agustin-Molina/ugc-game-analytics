@@ -208,7 +208,7 @@ umbrales como `hourly_min_peak_ccu`) en [`config/collectors.yaml`](config/collec
 
 | Workflow | Frecuencia | Qué hace |
 |---|---|---|
-| `roblox_hourly.yml` | cada hora (:17) — **activo** | charts + descubiertos por búsqueda + detalles y votos de los juegos que tocan por tier. Cada run es un loop de ~5,5 h ([`scripts/hourly_loop.sh`](scripts/hourly_loop.sh)) que se relanza solo; el cron (cada 3 h) solo retoma la cadena si se corta, porque el cron de GitHub saltea muchas corridas. Después de cada corrida lanza los diarios cuyo cron no disparó ([`scripts/dispatch_missed.sh`](scripts/dispatch_missed.sh), 90 min de margen) |
+| `roblox_hourly.yml` | cada hora (:17) — **activo** | charts + descubiertos por búsqueda + detalles y votos de los juegos que tocan por tier. Cada run es un loop de ~5,5 h ([`scripts/hourly_loop.sh`](scripts/hourly_loop.sh)) que se relanza solo; el cron (cada 3 h) solo retoma la cadena si se corta, porque el cron de GitHub saltea muchas corridas. Después de cada corrida lanza los diarios cuyo cron no disparó ([`scripts/dispatch_missed.sh`](scripts/dispatch_missed.sh), 90 min de margen). Si después el cron llega tarde, el job `guard` de cada diario ([`scripts/ran_today.sh`](scripts/ran_today.sh)) saltea esa segunda corrida |
 | `roblox_search.yml` | diario (06:23 UTC) — **activo** | barrido de keywords (~5,5 h, 1 req/min) → `search_positions` |
 | `roblox_assets.yml` | diario (08:11 UTC) | ícono, miniaturas y gamepasses (hot/warm diario, cold semanal; ~8 min) → `media`, `gamepasses`, `asset_checks`, `events` |
 | `fortnite_daily.yml` | diario (03:37 UTC) — **activo** | catálogo + métricas de las islas que tocan por tier (~2,5–3,5 h) |
