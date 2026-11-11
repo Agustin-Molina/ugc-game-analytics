@@ -20,7 +20,7 @@ Los datos viven en un repo aparte: **[ugc-game-analytics-data](https://github.co
 | Fase | Estado |
 |---|---|
 | 0 — Colector mínimo | ✅ todos los crons activos (2026-11-10) |
-| 1 — Robustez (tiers, calidad, keywords, compactación) | en curso: tiers de Roblox y Fortnite, búsqueda por keywords y checks de calidad listos; falta compactación |
+| 1 — Robustez (tiers, calidad, keywords, compactación) | ✅ completa (2026-11-11) |
 | 2 — Enriquecimiento | pendiente |
 | 3 — Análisis | pendiente |
 
@@ -184,6 +184,7 @@ uv run python -m collectors.roblox_search --keywords tycoon,obby --budget-minute
 uv run python -m collectors.fortnite --limit 500
 uv run python -m collectors.fortnite --codes 9782-7008-5547 --dry-run
 uv run python -m pipeline.quality --no-write            # checks de calidad sobre ./data
+uv run python -m pipeline.compact --dry-run             # qué particiones se compactarían
 ```
 
 `--data-dir` (o `UGC_DATA_DIR`) cambia la carpeta de salida. Configuración (tasas, lotes,
@@ -200,6 +201,7 @@ umbrales como `hourly_min_peak_ccu`) en [`config/collectors.yaml`](config/collec
 | `roblox_search.yml` | diario (06:23 UTC) — **activo** | barrido de keywords (~5,5 h, 1 req/min) → `search_positions` |
 | `fortnite_daily.yml` | diario (03:37 UTC) — **activo** | catálogo + métricas de las islas que tocan por tier (~2,5–3,5 h) |
 | `quality_daily.yml` | diario (12:53 UTC) — **activo** | checks de calidad → `quality`; falla si hay errores |
+| `compact_weekly.yml` | domingos (02:47 UTC) | junta los Parquet de cada partición de hace ≥ 2 días en uno ([`pipeline/compact.py`](pipeline/compact.py)); mismo contenido |
 | `keepalive.yml` | mensual (día 3) — **activo** | re-habilita los workflows vía API (regla de 60 días) |
 
 Los workflows hacen checkout del repo de datos en `./data` con una deploy key
@@ -212,7 +214,7 @@ Los workflows hacen checkout del repo de datos en `./data` con una deploy key
 collectors/   common.py (HTTP, reintentos, rate limit, Parquet), roblox.py, roblox_search.py,
               fortnite.py
 config/       collectors.yaml, tiers.yaml, keywords.yaml
-pipeline/     db.py (vistas DuckDB), tiers.py, quality.py; próximas: compact, features
+pipeline/     db.py (vistas DuckDB), tiers.py, quality.py, compact.py; próxima: features
 tests/        pytest + respx, sin red
 scripts/      commit_data.sh
 .github/workflows/

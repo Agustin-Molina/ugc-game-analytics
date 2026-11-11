@@ -67,20 +67,20 @@ También es un proyecto de portfolio de data: código limpio, README claro, data
 
 ## Fases
 ### Fase 0 — Colector mínimo (hacer YA)
-- [ ] Estructura del repo, `pyproject.toml`, README inicial.
-- [ ] `collectors/fortnite.py`: paginar /islands, registrar islas nuevas, bajar métricas del grupo del día.
-- [ ] `collectors/roblox.py`: charts principales + IDs ya trackeados, detalles y votos en lote.
-- [ ] Escritura a Parquet particionado.
-- [ ] Workflows: `fortnite_daily.yml`, `roblox_hourly.yml` (+ `workflow_dispatch` para correr a mano).
-- [ ] Probar localmente y con `workflow_dispatch` antes de activar los crons.
+- [x] Estructura del repo, `pyproject.toml`, README inicial.
+- [x] `collectors/fortnite.py`: paginar /islands, registrar islas nuevas, bajar métricas del grupo del día.
+- [x] `collectors/roblox.py`: charts principales + IDs ya trackeados, detalles y votos en lote.
+- [x] Escritura a Parquet particionado.
+- [x] Workflows: `fortnite_daily.yml`, `roblox_hourly.yml` (+ `workflow_dispatch` para correr a mano).
+- [x] Probar localmente y con `workflow_dispatch` antes de activar los crons.
 - Criterio de listo: 3 corridas seguidas exitosas en Actions con datos commiteados.
 
 ### Fase 1 — Robustez (semanas 1–2)
-- [ ] Reintentos/backoff, logs claros, resumen de cada corrida (filas, errores, duración).
-- [ ] Checks de calidad: snapshots faltantes, valores imposibles, duplicados.
-- [ ] Tiers hot/warm/cold + promoción automática.
-- [ ] Descubrimiento de Roblox por keywords para captar lanzamientos nuevos.
-- [ ] Workflow semanal de compactación de Parquet chicos.
+- [x] Reintentos/backoff, logs claros, resumen de cada corrida (filas, errores, duración).
+- [x] Checks de calidad: snapshots faltantes, valores imposibles, duplicados.
+- [x] Tiers hot/warm/cold + promoción automática.
+- [x] Descubrimiento de Roblox por keywords para captar lanzamientos nuevos.
+- [x] Workflow semanal de compactación de Parquet chicos.
 
 ### Fase 2 — Enriquecimiento (semanas 2–4)
 - [ ] Historial del creador (juegos previos, mejor peak previo).

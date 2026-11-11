@@ -1,0 +1,55 @@
+name: compact_weekly
+
+# Junta los Parquet chicos de cada partición `date=` cerrada (≥ 2 días) en un solo archivo
+# (pipeline/compact.py). No cambia el contenido; no achica el historial de git.
+on:
+  workflow_dispatch:
+    inputs:
+      min_age_days:
+        description: "Compactar particiones de hace al menos N días"
+        required: false
+        default: "2"
+  # Domingos 02:47 UTC. Si el cron no dispara, lo lanza el loop horario de Roblox
+  # (scripts/dispatch_missed.sh).
+  schedule:
+    - cron: "47 2 * * 0"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: compact_weekly
+  cancel-in-progress: false
+
+jobs:
+  compact:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v5
+
+      - name: Checkout repo de datos
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ github.repository_owner }}/ugc-game-analytics-data
+          ssh-key: ${{ secrets.DATA_REPO_DEPLOY_KEY }}
+          path: data
+          fetch-depth: 1
+
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Dependencias
+        run: uv sync --frozen --no-dev
+
+      - name: Compactar
+        env:
+          UGC_DATA_DIR: data
+          MIN_AGE_DAYS: ${{ inputs.min_age_days || '2' }}
+        run: uv run --no-dev python -m pipeline.compact --min-age-days "${MIN_AGE_DAYS}"
+
+      - name: Commit y push de datos
+        run: bash scripts/commit_data.sh data compact
