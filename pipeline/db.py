@@ -37,7 +37,7 @@ CHANGE_LOGS = {
 }
 FACT_TABLES = {
     "roblox": ["snapshots", "chart_positions", "search_positions", "events", "tier_history",
-               "asset_checks", "quality"],
+               "asset_checks", "creator_games", "creator_checks", "quality"],
     "fortnite": ["snapshots", "fetch_log", "events", "quality"],
 }
 

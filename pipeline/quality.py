@@ -262,6 +262,16 @@ def check_roblox(con: duckdb.DuckDBPyConnection, now: datetime, rules: dict[str,
                             "desde el último barrido de ícono/miniaturas/gamepasses"))
     else:
         checks.append(Check("assets_age_hours", SKIP, detail="sin barridos todavía"))
+
+    # barrido diario del historial de creadores
+    if _has(con, "roblox_creator_checks"):
+        last_cr = _ts(con, f"select max(snapshot_at) from roblox_creator_checks "
+                           f"where {WINDOW}", _since(now - timedelta(days=7)))
+        age = _hours(now - last_cr[0]) if last_cr and last_cr[0] else 24 * 7.0
+        checks.append(grade("creators_age_hours", age, r["creators_age_hours"], "h",
+                            "desde el último barrido de historial de creadores"))
+    else:
+        checks.append(Check("creators_age_hours", SKIP, detail="sin barridos todavía"))
     return checks
 
 

@@ -20,6 +20,18 @@ Features de título (ambas plataformas; en Roblox el título es `name`):
   (expresiones en `title_tags` de genres.yaml)
 - `has_multiplier` ("2X", "x10"), `title_clean` (sin corchetes ni emojis, para comparar
   nombres), `title_keywords` (keywords de config/keywords.yaml presentes como palabras)
+
+Historial del creador (`<plataforma>_creator_history`, también en `_games_enriched`):
+- Roblox (de `creator_games`, último listado de cada creador; null si todavía no se
+  consultó): `creator_total_games`, `creator_first_game_at`, `creator_checked_at` y, sobre
+  los juegos creados ANTES que este: `creator_prev_games`, `creator_prev_max_visits`,
+  `creator_prev_total_visits`, `creator_prev_hits` (≥ HIT_VISITS visitas). Ojo: son visitas
+  acumuladas a la fecha del listado, no a la fecha de lanzamiento de este juego.
+- Fortnite (del catálogo y de nuestros snapshots): `creator_other_islands`,
+  `creator_other_with_data` (otras islas con métricas observadas),
+  `creator_best_peak_other` (mejor peak CCU diario observado en otras islas del creador) y
+  `creator_prev_islands_seen` (islas del creador vistas antes que esta; la carga inicial del
+  catálogo es del 2026-11-09, así que solo cuenta para islas aparecidas después).
 """
 
 from __future__ import annotations
@@ -39,6 +51,9 @@ KEYWORDS_PATH = ROOT / "config" / "keywords.yaml"
 EMOJI_RE = r"[\x{1F000}-\x{1FAFF}\x{2600}-\x{27BF}\x{2B00}-\x{2BFF}\x{1F1E6}-\x{1F1FF}]"
 VARIATION_RE = r"[\x{FE0F}\x{200D}]"
 BRACKET_RE = r"[\[\(【]([^\]\)】]*)[\]\)】]"
+
+# un juego previo con al menos estas visitas cuenta como "hit" del creador
+HIT_VISITS = 1_000_000
 
 # columnas que necesita cada vista de features
 REQUIRED = {
@@ -188,14 +203,77 @@ select g.island_code,
 from fortnite_games g left join agg a using (island_code)""")
         created.append("fortnite_game_features")
 
+    created += _creator_history(con)
+
     for platform, key in (("roblox", "universe_id"), ("fortnite", "island_code")):
         if f"{platform}_game_features" in created:
             # la columna genre_unified de la dimensión (vacía) la reemplaza la de features
             excl = (" exclude (genre_unified)"
                     if "genre_unified" in _columns(con, f"{platform}_games") else "")
+            hist = f"{platform}_creator_history"
+            join_hist = f" left join {hist} h using ({key})" if hist in created else ""
+            cols_hist = f", h.* exclude ({key})" if hist in created else ""
             con.execute(f"""
 create or replace view {platform}_games_enriched as
-select g.*{excl}, f.* exclude ({key})
-from {platform}_games g join {platform}_game_features f using ({key})""")
+select g.*{excl}, f.* exclude ({key}){cols_hist}
+from {platform}_games g join {platform}_game_features f using ({key}){join_hist}""")
             created.append(f"{platform}_games_enriched")
+    return created
+
+
+def _creator_history(con: duckdb.DuckDBPyConnection) -> list[str]:
+    created = []
+    if (_has_view(con, "roblox_creator_games") and _has_view(con, "roblox_games")
+            and {"creator_type", "creator_id", "created_at"} <= _columns(con, "roblox_games")):
+        con.execute(f"""
+create or replace view roblox_creator_history as
+with latest as (   -- último listado de cada creador
+    select * from roblox_creator_games
+    qualify snapshot_at = max(snapshot_at) over (partition by creator_type, creator_id)
+), pairs as (
+    select g.universe_id, l.snapshot_at, l.created_at, l.place_visits,
+           l.created_at < g.created_at and l.universe_id <> g.universe_id as prev
+    from roblox_games g join latest l using (creator_type, creator_id)
+)
+select universe_id,
+       count(*)::int as creator_total_games,
+       min(created_at) as creator_first_game_at,
+       max(snapshot_at) as creator_checked_at,
+       count(*) filter (prev)::int as creator_prev_games,
+       max(place_visits) filter (prev) as creator_prev_max_visits,
+       sum(place_visits) filter (prev)::bigint as creator_prev_total_visits,
+       count(*) filter (prev and place_visits >= {HIT_VISITS})::int as creator_prev_hits
+from pairs group by universe_id""")
+        created.append("roblox_creator_history")
+
+    if (_has_view(con, "fortnite_games")
+            and {"creator_code", "first_seen_at"} <= _columns(con, "fortnite_games")):
+        peaks = ("select island_code, max(peak_ccu) as peak from fortnite_snapshots "
+                 "where interval = 'day' group by island_code"
+                 if _has_view(con, "fortnite_snapshots")
+                 else "select null::varchar as island_code, null::bigint as peak limit 0")
+        con.execute(f"""
+create or replace view fortnite_creator_history as
+with peaks as ({peaks}),
+isl as (
+    select g.island_code, g.creator_code, g.first_seen_at, p.peak,
+           row_number() over (partition by g.creator_code
+                              order by p.peak desc nulls last, g.island_code) as best_rank,
+           rank() over (partition by g.creator_code order by g.first_seen_at) - 1 as seen_before
+    from fortnite_games g left join peaks p using (island_code)
+), cr as (   -- top 2 por creador: el mejor "otro" de la mejor isla es la segunda
+    select creator_code, count(*) as n, count(peak) as n_data,
+           max(peak) filter (best_rank = 1) as best1,
+           max(peak) filter (best_rank = 2) as best2,
+           max(island_code) filter (best_rank = 1) as best_island
+    from isl group by creator_code
+)
+select i.island_code,
+       (c.n - 1)::int as creator_other_islands,
+       (c.n_data - (i.peak is not null)::int)::int as creator_other_with_data,
+       case when i.island_code = c.best_island then c.best2 else c.best1 end
+           as creator_best_peak_other,
+       i.seen_before::int as creator_prev_islands_seen
+from isl i join cr c using (creator_code)""")
+        created.append("fortnite_creator_history")
     return created

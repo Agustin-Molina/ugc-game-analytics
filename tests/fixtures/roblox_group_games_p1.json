@@ -1,0 +1,54 @@
+{
+ "previousPageCursor": null,
+ "nextPageCursor": "CURSOR2",
+ "data": [
+  {
+   "id": 10770659960,
+   "name": "Steal An Egg for Bobo",
+   "description": "Welcome to Steal An Egg for Bobo! 🥚\n\nHow",
+   "creator": {
+    "id": 12208023,
+    "type": "Group"
+   },
+   "rootPlace": {
+    "id": 79660328121282,
+    "type": "Place"
+   },
+   "created": "2026-10-13T13:13:52.103Z",
+   "updated": "2026-10-14T18:49:17.683Z",
+   "placeVisits": 131448
+  },
+  {
+   "id": 10767256978,
+   "name": "Pet Ride Speed Clicker 🐶⚡",
+   "description": "Welcome to Pet Ride Speed Clicker! ⚡\n\nRi",
+   "creator": {
+    "id": 12208023,
+    "type": "Group"
+   },
+   "rootPlace": {
+    "id": 83412491910547,
+    "type": "Place"
+   },
+   "created": "2026-09-20T13:30:33.407Z",
+   "updated": "2026-09-21T14:08:24.703Z",
+   "placeVisits": 1126620
+  },
+  {
+   "id": 10706168928,
+   "name": "Don’t Steal the Animal 🦖",
+   "description": "Welcome to Don't Steal the Animal! 🦖\n\nHo",
+   "creator": {
+    "id": 12208023,
+    "type": "Group"
+   },
+   "rootPlace": {
+    "id": 127041185947587,
+    "type": "Place"
+   },
+   "created": "2026-08-14T20:06:03.417Z",
+   "updated": "2026-08-15T18:34:10.933Z",
+   "placeVisits": 1321944
+  }
+ ]
+}

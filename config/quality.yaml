@@ -21,6 +21,8 @@ roblox:
   search_age_hours: {warn: 30, error: 54}
   # Barrido diario de ícono, miniaturas y gamepasses: horas desde el último.
   assets_age_hours: {warn: 30, error: 54}
+  # Barrido diario del historial de creadores: horas desde el último.
+  creators_age_hours: {warn: 30, error: 54}
 
 fortnite:
   run_gap_minutes: 60

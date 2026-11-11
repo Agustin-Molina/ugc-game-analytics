@@ -133,3 +133,68 @@ def test_config_validation(tmp_path):
     p.write_text(yaml.safe_dump(dup))
     with pytest.raises(ValueError, match="'x'"):
         features.load_genres(p)
+
+
+def test_creator_history(tmp_path):
+    from collectors.common import write_partition
+    from collectors.roblox_creators import CREATOR_GAMES_SCHEMA
+
+    d = lambda day: datetime(2026, 1, day, tzinfo=UTC)  # noqa: E731
+    games = ROBLOX.head(2).with_columns(
+        pl.Series("creator_type", ["Group", "User"]), pl.Series("creator_id", [7, 8]),
+        pl.Series("created_at", [d(10), d(1)]))
+    write_dimension_changes(games.clear(), games, "universe_id", tmp_path, "roblox", T0, "r")
+    old = datetime(2026, 11, 1, tzinfo=UTC)
+    rows = [  # (snapshot, creator_id, universe_id, created, visits)
+        (old, 7, 99, d(2), 1),               # listado viejo: lo pisa el último
+        (T0, 7, 1, d(10), 50), (T0, 7, 90, d(2), 2_000_000), (T0, 7, 91, d(5), 300),
+        (T0, 7, 92, d(20), 9_000_000),       # posterior al juego 1: no es "previo"
+    ]
+    cg = pl.DataFrame([{"snapshot_at": s, "creator_type": "Group", "creator_id": c,
+                        "universe_id": u, "created_at": cr, "place_visits": v}
+                       for s, c, u, cr, v in rows]).cast(
+        {k: v for k, v in CREATOR_GAMES_SCHEMA.items() if k in
+         ("snapshot_at", "creator_type", "creator_id", "universe_id", "created_at",
+          "place_visits")})
+    write_partition(cg.filter(pl.col("snapshot_at") == old), tmp_path, "roblox",
+                    "creator_games", old, "c0")
+    write_partition(cg.filter(pl.col("snapshot_at") == T0), tmp_path, "roblox",
+                    "creator_games", T0, "c1")
+
+    fn = pl.DataFrame({
+        "island_code": ["i1", "i2", "i3", "j1"],
+        "title": ["a", "b", "c", "d"], "tags": [["pvp"]] * 4, "category": [None] * 4,
+        "creator_code": ["cre", "cre", "cre", "solo"],
+        "first_seen_at": [d(1), d(1), d(9), d(1)],
+    })
+    write_dimension_changes(fn.clear(), fn, "island_code", tmp_path, "fortnite", T0, "f")
+    snaps = pl.DataFrame({"island_code": ["i1", "i1", "i2", "j1"],
+                          "interval": ["day", "day", "day", "hour"],
+                          "bucket_start": [d(1), d(2), d(1), d(1)],
+                          "snapshot_at": [T0] * 4, "peak_ccu": [100, 300, 50, 999]})
+    write_partition(snaps, tmp_path, "fortnite", "snapshots", T0, "s")
+
+    con = connect(tmp_path, features=False)
+    created = features.register(con, keywords=KEYWORDS)
+    assert "roblox_creator_history" in created and "fortnite_creator_history" in created
+
+    r = {x["universe_id"]: x for x in rows_(con, "select * from roblox_games_enriched")}
+    g1 = r[1]
+    assert g1["creator_total_games"] == 4 and g1["creator_prev_games"] == 2
+    assert g1["creator_prev_max_visits"] == 2_000_000
+    assert g1["creator_prev_total_visits"] == 2_000_300 and g1["creator_prev_hits"] == 1
+    assert g1["creator_first_game_at"] == d(2)
+    assert r[2]["creator_total_games"] is None  # creador sin consultar
+
+    f = {x["island_code"]: x for x in rows_(con, "select * from fortnite_games_enriched")}
+    assert f["i1"]["creator_best_peak_other"] == 50     # la mejor isla ve la segunda
+    assert f["i2"]["creator_best_peak_other"] == 300
+    assert f["i3"]["creator_best_peak_other"] == 300
+    assert f["i3"]["creator_other_with_data"] == 2 and f["i1"]["creator_other_with_data"] == 1
+    assert f["i3"]["creator_prev_islands_seen"] == 2 and f["i1"]["creator_prev_islands_seen"] == 0
+    assert f["j1"]["creator_other_islands"] == 0
+    assert f["j1"]["creator_best_peak_other"] is None   # solo snapshots horarios: no cuentan
+
+
+def rows_(con, sql):
+    return con.sql(sql).pl().to_dicts()

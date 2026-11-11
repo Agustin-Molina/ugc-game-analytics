@@ -1,0 +1,54 @@
+{
+ "previousPageCursor": null,
+ "nextPageCursor": null,
+ "data": [
+  {
+   "id": 6347378905,
+   "name": "BR (Test)",
+   "description": null,
+   "creator": {
+    "id": 68816760,
+    "type": "User"
+   },
+   "rootPlace": {
+    "id": 18734197659,
+    "type": "Place"
+   },
+   "created": "2024-07-31T08:15:26.72Z",
+   "updated": "2024-08-06T20:01:22.09Z",
+   "placeVisits": 73
+  },
+  {
+   "id": 4703236713,
+   "name": "Battle Game (BATA)",
+   "description": null,
+   "creator": {
+    "id": 68816760,
+    "type": "User"
+   },
+   "rootPlace": {
+    "id": 13527726733,
+    "type": "Place"
+   },
+   "created": "2023-05-23T14:51:33.6Z",
+   "updated": "2024-05-14T18:10:33.91Z",
+   "placeVisits": 41
+  },
+  {
+   "id": 3969981061,
+   "name": "Rob A Jewellery Store! (EASY OBBY)",
+   "description": "Welcome to the remastered 'Rob A Jewelle",
+   "creator": {
+    "id": 68816760,
+    "type": "User"
+   },
+   "rootPlace": {
+    "id": 11087359821,
+    "type": "Place"
+   },
+   "created": "2022-09-26T15:33:22.747Z",
+   "updated": "2022-11-23T23:56:42.6Z",
+   "placeVisits": 37324362
+  }
+ ]
+}

@@ -1,0 +1,38 @@
+{
+ "previousPageCursor": "CURSOR1",
+ "nextPageCursor": null,
+ "data": [
+  {
+   "id": 10602518983,
+   "name": "Don’t Break the Bobo Egg 🐻",
+   "description": "Welcome to Don’t Break the Bobo Egg! 🐻\n\n",
+   "creator": {
+    "id": 12208023,
+    "type": "Group"
+   },
+   "rootPlace": {
+    "id": 79333319119553,
+    "type": "Place"
+   },
+   "created": "2026-07-31T08:29:51.607Z",
+   "updated": "2026-08-01T15:21:42.507Z",
+   "placeVisits": 1132758
+  },
+  {
+   "id": 10536909203,
+   "name": "Steal the Dumpling Squishy 🥟",
+   "description": "Welcome to Steal the Dumpling Squishy! 🥟",
+   "creator": {
+    "id": 12208023,
+    "type": "Group"
+   },
+   "rootPlace": {
+    "id": 99827714610637,
+    "type": "Place"
+   },
+   "created": "2026-07-20T15:35:00.957Z",
+   "updated": "2026-07-20T20:39:39.52Z",
+   "placeVisits": 2041112
+  }
+ ]
+}

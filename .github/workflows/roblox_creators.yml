@@ -1,0 +1,80 @@
+name: roblox_creators
+
+# Historial de los creadores de los juegos trackeados (collectors/roblox_creators.py):
+# todos sus juegos públicos con visitas. Nuevos primero, después cada creador 1 vez por semana;
+# presupuesto de 70 min (los grupos permiten 30 requests/min).
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Máximo de creadores (vacío = todos; solo para pruebas)"
+        required: false
+        default: ""
+  # 09:41 UTC. Si el cron no dispara, lo lanza el loop horario de Roblox
+  # (scripts/dispatch_missed.sh).
+  schedule:
+    - cron: "41 9 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: roblox_creators
+  cancel-in-progress: false
+
+jobs:
+  # Si el cron llega tarde y hoy ya corrió (lo lanzó dispatch_missed.sh), no repetir.
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      skip: ${{ steps.guard.outputs.skip }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: scripts
+      - id: guard
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ran_today.sh
+
+  creators:
+    needs: guard
+    if: needs.guard.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v5
+
+      - name: Checkout repo de datos
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ github.repository_owner }}/ugc-game-analytics-data
+          ssh-key: ${{ secrets.DATA_REPO_DEPLOY_KEY }}
+          path: data
+          fetch-depth: 1
+
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Dependencias
+        run: uv sync --frozen --no-dev
+
+      - name: Historial de creadores
+        env:
+          UGC_DATA_DIR: data
+          LIMIT: ${{ inputs.limit }}
+        run: |
+          args=()
+          if [ -n "${LIMIT}" ]; then args+=(--limit "${LIMIT}"); fi
+          uv run --no-dev python -m collectors.roblox_creators "${args[@]}"
+
+      - name: Commit y push de datos
+        if: always()
+        run: bash scripts/commit_data.sh data roblox-creators

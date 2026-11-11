@@ -83,7 +83,7 @@ También es un proyecto de portfolio de data: código limpio, README claro, data
 - [x] Workflow semanal de compactación de Parquet chicos.
 
 ### Fase 2 — Enriquecimiento (semanas 2–4)
-- [ ] Historial del creador (juegos previos, mejor peak previo).
+- [x] Historial del creador (juegos previos, mejor peak previo).
 - [x] Features de título: emojis, números, corchetes [UPD], largo, palabras clave.
 - [x] Gamepasses (cantidad, precios) en Roblox.
 - [ ] Detección de clones por similitud de nombre/descripción.

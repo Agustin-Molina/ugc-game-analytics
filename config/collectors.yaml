@@ -60,3 +60,12 @@ roblox:
   rate_gamepasses_per_s: 10
   gamepasses_max_pages: 10    # 100 pases por página
   assets_cold_days: 7         # cold: una vez por semana; hot y warm: todos los días
+  # Historial de creadores (collectors/roblox_creators.py, 1 vez por día). Medido 2026-11-11:
+  # grupos 100 juegos/página y 30 req/min; usuarios 50 juegos/página y 200 req/min.
+  creator_group_games_url: "https://games.roblox.com/v2/groups/{id}/games"
+  creator_user_games_url: "https://games.roblox.com/v2/users/{id}/games"
+  rate_creator_groups_per_s: 0.45   # 27/min, debajo del límite de 30
+  rate_creator_users_per_s: 3
+  creators_max_pages: 5             # hasta 500 juegos por grupo, 250 por usuario
+  creators_refresh_days: 7          # cada creador se vuelve a consultar una vez por semana
+  creators_budget_minutes: 70       # ~1.900 grupos por corrida; la carga inicial (~4.800) en 3 días
