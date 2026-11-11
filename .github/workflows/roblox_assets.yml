@@ -1,0 +1,59 @@
+name: roblox_assets
+
+# Ícono, miniaturas y gamepasses de los juegos trackeados (collectors/roblox_assets.py):
+# hot y warm todos los días, cold una vez por semana. ~8 min con ~4.700 juegos.
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Máximo de juegos (vacío = todos; solo para pruebas)"
+        required: false
+        default: ""
+  # 08:11 UTC. Si el cron no dispara, lo lanza el loop horario de Roblox
+  # (scripts/dispatch_missed.sh).
+  schedule:
+    - cron: "11 8 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: roblox_assets
+  cancel-in-progress: false
+
+jobs:
+  assets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v5
+
+      - name: Checkout repo de datos
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ github.repository_owner }}/ugc-game-analytics-data
+          ssh-key: ${{ secrets.DATA_REPO_DEPLOY_KEY }}
+          path: data
+          fetch-depth: 1
+
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Dependencias
+        run: uv sync --frozen --no-dev
+
+      - name: Ícono, miniaturas y gamepasses
+        env:
+          UGC_DATA_DIR: data
+          LIMIT: ${{ inputs.limit }}
+        run: |
+          args=()
+          if [ -n "${LIMIT}" ]; then args+=(--limit "${LIMIT}"); fi
+          uv run --no-dev python -m collectors.roblox_assets "${args[@]}"
+
+      - name: Commit y push de datos
+        if: always()
+        run: bash scripts/commit_data.sh data roblox-assets

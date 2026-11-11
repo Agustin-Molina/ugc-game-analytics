@@ -21,7 +21,7 @@ Los datos viven en un repo aparte: **[ugc-game-analytics-data](https://github.co
 |---|---|
 | 0 — Colector mínimo | ✅ todos los crons activos (2026-11-10) |
 | 1 — Robustez (tiers, calidad, keywords, compactación) | ✅ completa (2026-11-11) |
-| 2 — Enriquecimiento | pendiente |
+| 2 — Enriquecimiento | en curso: ícono, miniaturas y gamepasses de Roblox listos |
 | 3 — Análisis | pendiente |
 
 ## Fuentes
@@ -34,6 +34,8 @@ Los datos viven en un repo aparte: **[ugc-game-analytics-data](https://github.co
 | Roblox | `games.roblox.com/v1/games?universeIds=` (lotes de 50) | detalles: playing, visits, favoritos, género |
 | Roblox | `games.roblox.com/v1/games/votes?universeIds=` (lotes de 100) | likes / dislikes |
 | Roblox | `apis.roblox.com/search-api/omni-search?searchQuery=&pageType=all` (40/página, cursor) | descubrimiento por keywords |
+| Roblox | `thumbnails.roblox.com/v1/games/icons` y `/v1/games/multiget/thumbnails` (lotes de 100) | ícono y miniaturas del carrusel |
+| Roblox | `apis.roblox.com/game-passes/v1/universes/{id}/game-passes?passView=Full` (paginado) | gamepasses: nombre, precio, a la venta |
 
 Rate limits medidos (no todos documentados): Fortnite ~6 req/s sostenidos; Roblox
 `/v1/games` ~500 IDs cada 30 s (el header dice 300 req/min, pero el límite real es por IDs);
@@ -65,10 +67,18 @@ siempre (último visto, última consulta, última actividad) no se guardan: se d
 - `games` — dimensión (log): nombre, descripción, creador, géneros (`genre_raw`,
   `genre_l1`, `genre_l2`), created/updated, `first_seen_at`, `first_traction_at`, tier,
   `valid_from`.
-- `events` — name_change, description_change, update (old/new value).
+- `events` — name_change, description_change, update, icon_change, thumbnail_change
+  (old/new value).
 - `search_positions` — snapshot_at, keyword, rank, universe_id, root_place_id, player_count,
   up_votes, down_votes, is_sponsored, age_rating (ranking de búsqueda por keyword, 1 vez por día).
 - `tier_history` — changed_at, universe_id, from_tier, to_tier, reason (cada cambio de tier).
+- `media` — log de cambios (como `games`): icon_state, icon_hash (identifica la imagen del
+  ícono; es el mismo en todos los tamaños), thumbnail_ids (assets del carrusel, en orden).
+- `gamepasses` — log de cambios por (universe_id, pass_id): name, description, price (null
+  si no está a la venta), is_for_sale, icon_asset_id, created_at, updated_at, is_listed
+  (false si desapareció del juego).
+- `asset_checks` — snapshot_at, universe_id, media_ok, gamepasses_status, n_gamepasses (una
+  fila por juego consultado: acota entre qué días cambió algo).
 
 **Fortnite**
 - `snapshots` — island_code, interval (`day`|`hour`), bucket_start, snapshot_at, is_partial,
@@ -181,6 +191,7 @@ uv sync
 uv run pytest
 uv run python -m collectors.roblox --limit 100          # escribe en ./data
 uv run python -m collectors.roblox_search --keywords tycoon,obby --budget-minutes 3
+uv run python -m collectors.roblox_assets --limit 50
 uv run python -m collectors.fortnite --limit 500
 uv run python -m collectors.fortnite --codes 9782-7008-5547 --dry-run
 uv run python -m pipeline.quality --no-write            # checks de calidad sobre ./data
@@ -199,6 +210,7 @@ umbrales como `hourly_min_peak_ccu`) en [`config/collectors.yaml`](config/collec
 |---|---|---|
 | `roblox_hourly.yml` | cada hora (:17) — **activo** | charts + descubiertos por búsqueda + detalles y votos de los juegos que tocan por tier. Cada run es un loop de ~5,5 h ([`scripts/hourly_loop.sh`](scripts/hourly_loop.sh)) que se relanza solo; el cron (cada 3 h) solo retoma la cadena si se corta, porque el cron de GitHub saltea muchas corridas. Después de cada corrida lanza los diarios cuyo cron no disparó ([`scripts/dispatch_missed.sh`](scripts/dispatch_missed.sh), 90 min de margen) |
 | `roblox_search.yml` | diario (06:23 UTC) — **activo** | barrido de keywords (~5,5 h, 1 req/min) → `search_positions` |
+| `roblox_assets.yml` | diario (08:11 UTC) | ícono, miniaturas y gamepasses (hot/warm diario, cold semanal; ~8 min) → `media`, `gamepasses`, `asset_checks`, `events` |
 | `fortnite_daily.yml` | diario (03:37 UTC) — **activo** | catálogo + métricas de las islas que tocan por tier (~2,5–3,5 h) |
 | `quality_daily.yml` | diario (12:53 UTC) — **activo** | checks de calidad → `quality`; falla si hay errores |
 | `compact_weekly.yml` | domingos (02:47 UTC) | junta los Parquet de cada partición de hace ≥ 2 días en uno ([`pipeline/compact.py`](pipeline/compact.py)); mismo contenido |
@@ -212,7 +224,7 @@ Los workflows hacen checkout del repo de datos en `./data` con una deploy key
 
 ```
 collectors/   common.py (HTTP, reintentos, rate limit, Parquet), roblox.py, roblox_search.py,
-              fortnite.py
+              roblox_assets.py, fortnite.py
 config/       collectors.yaml, tiers.yaml, keywords.yaml
 pipeline/     db.py (vistas DuckDB), tiers.py, quality.py, compact.py; próxima: features
 tests/        pytest + respx, sin red

@@ -39,6 +39,7 @@ while read -r workflow hhmm dow; do
 done <<'EOF'
 fortnite_daily.yml 03:37
 roblox_search.yml 06:23
+roblox_assets.yml 08:11
 quality_daily.yml 12:53
 compact_weekly.yml 02:47 0
 EOF

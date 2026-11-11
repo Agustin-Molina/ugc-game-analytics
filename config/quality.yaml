@@ -19,6 +19,8 @@ roblox:
   negative_favorites_share: {warn: 0, error: 0.01}
   # Barrido diario de búsqueda: horas desde el último.
   search_age_hours: {warn: 30, error: 54}
+  # Barrido diario de ícono, miniaturas y gamepasses: horas desde el último.
+  assets_age_hours: {warn: 30, error: 54}
 
 fortnite:
   run_gap_minutes: 60

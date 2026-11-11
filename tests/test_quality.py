@@ -73,6 +73,7 @@ def test_roblox_healthy(tmp_path, rules):
         "visits_decrease_share", "orphan_snapshots", "dim_duplicates"}
     assert c["overdue_cold"].status == quality.SKIP
     assert c["search_age_hours"].status == quality.SKIP
+    assert c["assets_age_hours"].status == quality.SKIP
     assert "24 corridas" in c["max_gap_hours"].detail
 
 

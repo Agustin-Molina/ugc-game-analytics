@@ -49,3 +49,14 @@ roblox:
   search_min_players: 1
   search_lookback_hours: 48
   search_new_per_run: 1500    # tope por corrida horaria (el resto entra en las siguientes)
+  # Ícono, miniaturas y gamepasses (collectors/roblox_assets.py, 1 vez por día).
+  # Medido 2026-11-11: icons 100 ids/request y 1200 req/min; multiget/thumbnails 100 ids y
+  # 60 req/min (máx. 10 miniaturas por juego); game-passes 1 juego por request, 50 req/s.
+  icons_url: "https://thumbnails.roblox.com/v1/games/icons"
+  thumbnails_url: "https://thumbnails.roblox.com/v1/games/multiget/thumbnails"
+  gamepasses_url: "https://apis.roblox.com/game-passes/v1/universes/{universe_id}/game-passes"
+  rate_icons_per_s: 5
+  rate_thumbnails_per_s: 0.9
+  rate_gamepasses_per_s: 10
+  gamepasses_max_pages: 10    # 100 pases por página
+  assets_cold_days: 7         # cold: una vez por semana; hot y warm: todos los días

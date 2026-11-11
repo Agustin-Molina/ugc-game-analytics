@@ -8,6 +8,8 @@ Vistas creadas (solo las de tablas que ya tienen archivos):
 
 - `<plataforma>_games`           estado actual de la dimensión (última fila por id)
 - `<plataforma>_games_history`   log completo de la dimensión (una fila por cambio)
+- `roblox_media`, `roblox_gamepasses` (+ `_history`): ícono/miniaturas y gamepasses, mismo
+                                 esquema de log de cambios
 - `<plataforma>_<tabla>`         tablas de hechos (snapshots, events, …) con columna `date`
 - `fortnite_snapshots_latest`    snapshots de Fortnite sin duplicados de solapamiento
                                  (la fila con `snapshot_at` más reciente por bucket)
@@ -25,9 +27,14 @@ import duckdb
 from collectors.common import resolve_data_dir
 
 DIMENSION_KEYS = {"roblox": "universe_id", "fortnite": "island_code"}
+# otros logs de cambios (valid_from): tabla → clave
+CHANGE_LOGS = {
+    "roblox": {"media": "universe_id", "gamepasses": "universe_id, pass_id"},
+    "fortnite": {},
+}
 FACT_TABLES = {
     "roblox": ["snapshots", "chart_positions", "search_positions", "events", "tier_history",
-               "quality"],
+               "asset_checks", "quality"],
     "fortnite": ["snapshots", "fetch_log", "events", "quality"],
 }
 
@@ -53,17 +60,18 @@ def connect(
     data_dir = resolve_data_dir(str(data_dir) if data_dir else None)
     con = con or duckdb.connect()
     for platform, key in DIMENSION_KEYS.items():
-        glob = _glob(data_dir, platform, "games")
-        if glob:
-            history = f"{platform}_games_history"
-            con.execute(
-                f"create or replace view {history} as select * from read_parquet("
-                f"'{glob}', hive_partitioning = false, union_by_name = true)"
-            )
-            con.execute(
-                f"create or replace view {platform}_games as "
-                f"{current_state_sql(history, key)}"
-            )
+        for table, tkey in {"games": key, **CHANGE_LOGS[platform]}.items():
+            glob = _glob(data_dir, platform, table)
+            if glob:
+                history = f"{platform}_{table}_history"
+                con.execute(
+                    f"create or replace view {history} as select * from read_parquet("
+                    f"'{glob}', hive_partitioning = false, union_by_name = true)"
+                )
+                con.execute(
+                    f"create or replace view {platform}_{table} as "
+                    f"{current_state_sql(history, tkey)}"
+                )
         for table in FACT_TABLES[platform]:
             glob = _glob(data_dir, platform, table)
             if glob:

@@ -306,12 +306,15 @@ def _conform(df: pl.DataFrame, schema: dict[str, pl.DataType]) -> pl.DataFrame:
 
 
 def read_dimension(
-    data_dir: Path, platform: str, schema: dict[str, pl.DataType], key: str
+    data_dir: Path,
+    platform: str,
+    schema: dict[str, pl.DataType],
+    key: str | list[str],
+    table: str = DIM_TABLE,
 ) -> pl.DataFrame:
-    """Estado actual de la dimensión: última fila por `key` según `valid_from`.
-
-    `schema` describe los atributos (sin `valid_from`)."""
-    files = sorted((data_dir / platform / DIM_TABLE).glob("date=*/*.parquet"))
+    """Estado actual de un log de cambios (`games` u otro): última fila por `key` según
+    `valid_from`. `schema` describe los atributos (sin `valid_from`)."""
+    files = sorted((data_dir / platform / table).glob("date=*/*.parquet"))
     if not files:
         return pl.DataFrame(schema=schema)
     full_schema = {**schema, VALID_FROM: TS}
@@ -325,12 +328,13 @@ def read_dimension(
 
 
 def dimension_changes(
-    old: pl.DataFrame, new: pl.DataFrame, key: str
+    old: pl.DataFrame, new: pl.DataFrame, key: str | list[str]
 ) -> pl.DataFrame:
     """Filas de `new` que no existen en `old` o con algún atributo distinto (null-safe)."""
     if old.is_empty():
         return new
-    attrs = [c for c in new.columns if c != key]
+    keys = [key] if isinstance(key, str) else key
+    attrs = [c for c in new.columns if c not in keys]
     old_marked = old.select(new.columns).with_columns(pl.lit(True).alias("__in_old"))
     joined = new.join(old_marked, on=key, how="left", suffix="__old")
     changed = pl.any_horizontal([pl.col(c).ne_missing(pl.col(f"{c}__old")) for c in attrs])
@@ -340,19 +344,20 @@ def dimension_changes(
 def write_dimension_changes(
     old: pl.DataFrame,
     new: pl.DataFrame,
-    key: str,
+    key: str | list[str],
     data_dir: Path,
     platform: str,
     partition_ts: datetime,
     run_id: str,
     part: int | None = None,
+    table: str = DIM_TABLE,
 ) -> tuple[Path | None, int]:
-    """Agrega al log de la dimensión solo los cambios de `new` respecto de `old`."""
+    """Agrega al log (`games` u otro) solo los cambios de `new` respecto de `old`."""
     changes = dimension_changes(old, new, key)
     if changes.is_empty():
         return None, 0
     changes = changes.with_columns(pl.lit(utcnow(), dtype=TS).alias(VALID_FROM))
-    path = write_partition(changes, data_dir, platform, DIM_TABLE, partition_ts, run_id, part)
+    path = write_partition(changes, data_dir, platform, table, partition_ts, run_id, part)
     return path, changes.height
 
 

@@ -252,6 +252,16 @@ def check_roblox(con: duckdb.DuckDBPyConnection, now: datetime, rules: dict[str,
                             "desde el último barrido de keywords"))
     else:
         checks.append(Check("search_age_hours", SKIP, detail="sin barridos todavía"))
+
+    # barrido diario de ícono, miniaturas y gamepasses
+    if _has(con, "roblox_asset_checks"):
+        last_assets = _ts(con, f"select max(snapshot_at) from roblox_asset_checks "
+                               f"where {WINDOW}", _since(now - timedelta(days=7)))
+        age = _hours(now - last_assets[0]) if last_assets and last_assets[0] else 24 * 7.0
+        checks.append(grade("assets_age_hours", age, r["assets_age_hours"], "h",
+                            "desde el último barrido de ícono/miniaturas/gamepasses"))
+    else:
+        checks.append(Check("assets_age_hours", SKIP, detail="sin barridos todavía"))
     return checks
 
 
