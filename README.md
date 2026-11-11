@@ -21,7 +21,7 @@ Los datos viven en un repo aparte: **[ugc-game-analytics-data](https://github.co
 |---|---|
 | 0 — Colector mínimo | ✅ todos los crons activos (2026-11-10) |
 | 1 — Robustez (tiers, calidad, keywords, compactación) | ✅ completa (2026-11-11) |
-| 2 — Enriquecimiento | en curso: ícono, miniaturas, gamepasses, géneros unificados, features de título e historial del creador listos |
+| 2 — Enriquecimiento | en curso: ícono, miniaturas, gamepasses, géneros unificados, features de título, historial del creador y clones listos |
 | 3 — Análisis | pendiente |
 
 ## Fuentes
@@ -189,6 +189,12 @@ tocar los datos.
   (`bracket_tags`), etiquetas de update / beta / evento dentro de los corchetes (`[UPD]`,
   `(BETA)`, `[🎃HALLOWEEN]`; "New York RP" no cuenta), multiplicadores (`2X`), `title_clean`
   (sin corchetes ni emojis) y `title_keywords` (keywords de `config/keywords.yaml`).
+- **Clones por título** ([`pipeline/clones.py`](pipeline/clones.py), vista `title_clones`,
+  entre las dos plataformas): familia de títulos con las mismas palabras ("Steal a Brainrot",
+  "STEAL THE BRAINROTS", "Steal a Brainrot 2"), más los títulos únicos que agregan una
+  palabra ("Steal a Brainrot Duels"). Tamaño de la familia (total y por plataforma), orden de
+  aparición (`clone_rank`) y fecha del primero. En Fortnite las familias más grandes son
+  nombres genéricos ("1v1 build fight": 6.700 islas), que también miden saturación.
 - **Historial del creador** (`<plataforma>_creator_history`): en Roblox, juegos previos del
   creador, sus visitas máximas y totales, y cuántos pasaron el millón de visitas (de
   `creator_games`; son visitas a la fecha del listado, no a la del lanzamiento). En Fortnite,
@@ -259,7 +265,7 @@ Los workflows hacen checkout del repo de datos en `./data` con una deploy key
 collectors/   common.py (HTTP, reintentos, rate limit, Parquet), roblox.py, roblox_search.py,
               roblox_assets.py, roblox_creators.py, fortnite.py
 config/       collectors.yaml, tiers.yaml, keywords.yaml, quality.yaml, genres.yaml
-pipeline/     db.py (vistas DuckDB), features.py, tiers.py, quality.py, compact.py
+pipeline/     db.py (vistas DuckDB), features.py, clones.py, tiers.py, quality.py, compact.py
 tests/        pytest + respx, sin red
 scripts/      commit_data.sh
 .github/workflows/

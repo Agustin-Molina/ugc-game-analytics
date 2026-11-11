@@ -198,3 +198,59 @@ def test_creator_history(tmp_path):
 
 def rows_(con, sql):
     return con.sql(sql).pl().to_dicts()
+
+
+def test_title_clones_across_platforms(tmp_path):
+    d = lambda y, m=1: datetime(y, m, 1, tzinfo=UTC)  # noqa: E731
+    rb = pl.DataFrame({
+        "universe_id": [1, 2, 3, 4],
+        "name": ["[💀] Steal a Brainrot", "[UPD] Steal a Brainrot 2", "Steal a Brainrot Duels",
+                 "Grow a Garden"],
+        "genre_l1": ["Simulation"] * 4, "genre_l2": ["Tycoon"] * 4, "genre_raw": ["All"] * 4,
+        "created_at": [d(2025, 5), d(2025, 8), d(2025, 9), d(2025, 3)],
+        "first_seen_at": [d(2026, 11)] * 4,
+    })
+    fn = pl.DataFrame({
+        "island_code": ["f1", "f2", "f3", "f4", "f5"],
+        "title": ["STEAL THE BRAINROTS 🧠", "1v1 Build Fight", "1V1 BUILD FIGHTS", "Build Fight",
+                  "🔥"],
+        "tags": [["tycoon"]] * 5, "category": [None] * 5,
+        "first_seen_at": [d(2026, 11)] * 5,
+    })
+    write_dimension_changes(rb.clear(), rb, "universe_id", tmp_path, "roblox", T0, "r")
+    write_dimension_changes(fn.clear(), fn, "island_code", tmp_path, "fortnite", T0, "f")
+    con = connect(tmp_path, features=False)
+    created = features.register(con, cfg={**features.load_genres(),
+                                          "clone_stopwords": ["a", "the"]}, keywords=[])
+    assert "title_clones" in created
+
+    c = {(x["platform"], x["id"]): x for x in rows_(con, "select * from title_clones")}
+    assert ("fortnite", "f5") not in c  # título sin palabras: no entra
+    steal = [c[("roblox", "1")], c[("roblox", "2")], c[("fortnite", "f1")]]
+    assert {x["title_key"] for x in steal} == {"brainrot steal"}
+    assert steal[0]["title_family_size"] == 3
+    duels = c[("roblox", "3")]
+    assert duels["title_key"] == "brainrot duel steal" and duels["clone_key"] == "brainrot steal"
+    assert duels["clone_group_size"] == 4
+    assert duels["clone_group_size_roblox"] == 3 and duels["clone_group_size_fortnite"] == 1
+    assert [c[("roblox", i)]["clone_rank"] for i in "123"] == [1, 2, 3]  # por fecha de creación
+    assert c[("roblox", "1")]["clone_group_first_at"] == d(2025, 5)
+    # "1v1 build fight" ya es familia (2 islas): no se mete en "build fight"
+    assert c[("fortnite", "f2")]["clone_key"] == "1v1 build fight"
+    assert c[("fortnite", "f2")]["clone_group_size"] == 2
+    assert c[("fortnite", "f4")]["clone_group_size"] == 1
+    assert c[("roblox", "4")]["clone_group_size"] == 1
+
+    r = {x["universe_id"]: x for x in rows_(con, "select * from roblox_games_enriched")}
+    assert r[3]["clone_key"] == "brainrot steal" and r[3]["clone_rank"] == 3
+    f = {x["island_code"]: x for x in rows_(con, "select * from fortnite_games_enriched")}
+    assert f["f5"]["clone_key"] is None
+
+
+def test_stopwords_must_be_strings(tmp_path):
+    import yaml
+    cfg = features.load_genres()
+    p = tmp_path / "g.yaml"
+    p.write_text(yaml.safe_dump({**cfg, "clone_stopwords": ["a", True]}))  # y sin comillas
+    with pytest.raises(ValueError, match="comillas"):
+        features.load_genres(p)

@@ -86,7 +86,7 @@ También es un proyecto de portfolio de data: código limpio, README claro, data
 - [x] Historial del creador (juegos previos, mejor peak previo).
 - [x] Features de título: emojis, números, corchetes [UPD], largo, palabras clave.
 - [x] Gamepasses (cantidad, precios) en Roblox.
-- [ ] Detección de clones por similitud de nombre/descripción.
+- [x] Detección de clones por similitud de nombre/descripción (por título; la descripción queda para más adelante).
 - [x] Taxonomía de géneros unificada Roblox↔Fortnite (`config/genres.yaml`).
 - [x] Detección de eventos (cambios de nombre/descripción/update).
 - [ ] Métricas derivadas: días hasta el peak, pendiente días 1–7 y 1–14, vida media de la caída,

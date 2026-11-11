@@ -120,3 +120,10 @@ title_tags:
   update: '\b(UPD|UPDATE[D]?|NEW|RELEASE[D]?|REWORK|BIG UPDATE|PART ?\d+|CH(APTER)? ?\d+|WORLD ?\d+|V ?\d+(\.\d+)*|\d+\.\d+)\b'
   beta: '\b(BETA|ALPHA|EARLY ACCESS|SOON|TESTING|DEMO)\b'
   event: '\b(EVENT|HALLOWEEN|CHRISTMAS|XMAS|EASTER|SUMMER|WINTER|VALENTINE|VALENTINES|THANKSGIVING|SPRING|FALL|AUTUMN|SPOOKY|FORTNITEMARES|WINTERFEST|NEW YEAR|LUNAR|ANNIVERSARY)\b'
+
+# Clones por título (pipeline/clones.py): palabras que no cuentan al comparar títulos.
+# Se comparan después de pasar a minúsculas y recortar el plural simple ("games" → "game").
+# Entre comillas: sin ellas YAML lee y / o / on como booleanos.
+clone_stopwords: ["a", "an", "the", "of", "and", "in", "on", "to", "for", "by", "with",
+                  "my", "your", "our", "de", "la", "el", "los", "las", "en", "y", "o",
+                  "or", "is", "it", "game", "roblox", "fortnite", "map", "mapa", "uefn"]

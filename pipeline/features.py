@@ -21,6 +21,9 @@ Features de título (ambas plataformas; en Roblox el título es `name`):
 - `has_multiplier` ("2X", "x10"), `title_clean` (sin corchetes ni emojis, para comparar
   nombres), `title_keywords` (keywords de config/keywords.yaml presentes como palabras)
 
+Clones por título (pipeline/clones.py → `title_clones`, también en `_games_enriched`):
+familia de títulos con las mismas palabras, entre plataformas, con tamaño y orden de aparición.
+
 Historial del creador (`<plataforma>_creator_history`, también en `_games_enriched`):
 - Roblox (de `creator_games`, último listado de cada creador; null si todavía no se
   consultó): `creator_total_games`, `creator_first_game_at`, `creator_checked_at` y, sobre
@@ -41,6 +44,8 @@ from typing import Any
 
 import duckdb
 import yaml
+
+from pipeline import clones
 
 ROOT = Path(__file__).resolve().parents[1]
 GENRES_PATH = ROOT / "config" / "genres.yaml"
@@ -70,6 +75,9 @@ def load_genres(path: Path = GENRES_PATH) -> dict[str, Any]:
         for rule in cfg[platform]:
             if rule["genre"] not in known:
                 raise ValueError(f"{platform}: género desconocido {rule['genre']!r}")
+    bad = [w for w in cfg.get("clone_stopwords", []) if not isinstance(w, str)]
+    if bad:
+        raise ValueError(f"clone_stopwords: valores que no son texto (¿falta comillas?): {bad}")
     tags = [t for rule in cfg["fortnite"] for t in rule["tags"]]
     dup = {t for t in tags if tags.count(t) > 1}
     if dup:
@@ -204,6 +212,10 @@ from fortnite_games g left join agg a using (island_code)""")
         created.append("fortnite_game_features")
 
     created += _creator_history(con)
+    need = {"roblox": {"created_at", "first_seen_at"}, "fortnite": {"first_seen_at"}}
+    clone_platforms = [p for p in ("roblox", "fortnite") if f"{p}_game_features" in created
+                       and need[p] <= _columns(con, f"{p}_games")]
+    created += clones.register(con, cfg.get("clone_stopwords", []), clone_platforms)
 
     for platform, key in (("roblox", "universe_id"), ("fortnite", "island_code")):
         if f"{platform}_game_features" in created:
@@ -213,10 +225,12 @@ from fortnite_games g left join agg a using (island_code)""")
             hist = f"{platform}_creator_history"
             join_hist = f" left join {hist} h using ({key})" if hist in created else ""
             cols_hist = f", h.* exclude ({key})" if hist in created else ""
+            cols_cl, join_cl = (clones.enriched_join(platform, key)
+                                if platform in clone_platforms else ("", ""))
             con.execute(f"""
 create or replace view {platform}_games_enriched as
-select g.*{excl}, f.* exclude ({key}){cols_hist}
-from {platform}_games g join {platform}_game_features f using ({key}){join_hist}""")
+select g.*{excl}, f.* exclude ({key}){cols_hist}{cols_cl}
+from {platform}_games g join {platform}_game_features f using ({key}){join_hist}{join_cl}""")
             created.append(f"{platform}_games_enriched")
     return created
 
