@@ -13,6 +13,8 @@ Vistas creadas (solo las de tablas que ya tienen archivos):
 - `<plataforma>_<tabla>`         tablas de hechos (snapshots, events, …) con columna `date`
 - `fortnite_snapshots_latest`    snapshots de Fortnite sin duplicados de solapamiento
                                  (la fila con `snapshot_at` más reciente por bucket)
+- `<plataforma>_game_features`   género unificado (config/genres.yaml) + features de título
+- `<plataforma>_games_enriched`  `<plataforma>_games` + esas features (pipeline/features.py)
 
 `python -m pipeline.db [--data-dir PATH]` lista las vistas y sus filas.
 """
@@ -25,6 +27,7 @@ from pathlib import Path
 import duckdb
 
 from collectors.common import resolve_data_dir
+from pipeline.features import register as register_features
 
 DIMENSION_KEYS = {"roblox": "universe_id", "fortnite": "island_code"}
 # otros logs de cambios (valid_from): tabla → clave
@@ -55,7 +58,9 @@ def _glob(data_dir: Path, platform: str, table: str) -> str | None:
 
 
 def connect(
-    data_dir: str | Path | None = None, con: duckdb.DuckDBPyConnection | None = None
+    data_dir: str | Path | None = None,
+    con: duckdb.DuckDBPyConnection | None = None,
+    features: bool = True,
 ) -> duckdb.DuckDBPyConnection:
     data_dir = resolve_data_dir(str(data_dir) if data_dir else None)
     con = con or duckdb.connect()
@@ -85,6 +90,8 @@ def connect(
             "select * from fortnite_snapshots qualify row_number() over ("
             "partition by island_code, interval, bucket_start order by snapshot_at desc) = 1"
         )
+    if features:
+        register_features(con)
     return con
 
 

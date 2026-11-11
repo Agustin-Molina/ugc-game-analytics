@@ -102,7 +102,7 @@ GAMES_SCHEMA: dict[str, pl.DataType] = {
     "category": pl.Utf8,
     "created_in": pl.Utf8,
     "tags": pl.List(pl.Utf8),
-    "genre_unified": pl.Utf8,  # Fase 2
+    "genre_unified": pl.Utf8,  # vacía: se calcula al leer (pipeline/features.py)
     "first_seen_at": TS,
     "is_listed": pl.Boolean,
     "first_traction_at": TS,

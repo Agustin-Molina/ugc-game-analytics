@@ -21,7 +21,7 @@ Los datos viven en un repo aparte: **[ugc-game-analytics-data](https://github.co
 |---|---|
 | 0 — Colector mínimo | ✅ todos los crons activos (2026-11-10) |
 | 1 — Robustez (tiers, calidad, keywords, compactación) | ✅ completa (2026-11-11) |
-| 2 — Enriquecimiento | en curso: ícono, miniaturas y gamepasses de Roblox listos |
+| 2 — Enriquecimiento | en curso: ícono, miniaturas, gamepasses, géneros unificados y features de título listos |
 | 3 — Análisis | pendiente |
 
 ## Fuentes
@@ -167,6 +167,27 @@ el Step Summary y en la tabla `quality`. Con algún error el workflow falla, as�
 por mail. Hallazgo: la API de Roblox devuelve `favoritedCount` negativo en algunos juegos.
 Se guarda tal cual y queda como aviso.
 
+### Géneros unificados y features de título
+
+[`pipeline/features.py`](pipeline/features.py) agrega dos vistas por plataforma:
+`<plataforma>_game_features` (clave + features) y `<plataforma>_games_enriched` (la dimensión
+con las features). Se calculan al leer: cambiar la taxonomía reclasifica toda la historia sin
+tocar los datos.
+
+- **`genre_unified`**: taxonomía común Roblox ↔ Fortnite de 25 géneros
+  ([`config/genres.yaml`](config/genres.yaml)). En Roblox sale de la taxonomía oficial
+  (`genre_l1` / `genre_l2`); en Fortnite, de las tags, por prioridad (una isla con
+  `tycoon` + `pvp` es tycoon). Fortnite suma `genres` (todos los que matchean) y
+  `licensed_ip` (Star Wars, LEGO, Squid Game…).
+- **Título**: largo, palabras, emojis, números, mayúsculas, `!`, corchetes y su texto
+  (`bracket_tags`), etiquetas de update / beta / evento dentro de los corchetes (`[UPD]`,
+  `(BETA)`, `[🎃HALLOWEEN]`; "New York RP" no cuenta), multiplicadores (`2X`), `title_clean`
+  (sin corchetes ni emojis) y `title_keywords` (keywords de `config/keywords.yaml`).
+
+```python
+con.sql("select genre_unified, count(*) from fortnite_game_features group by 1 order by 2 desc")
+```
+
 ### Leer con DuckDB
 
 ```python
@@ -225,8 +246,8 @@ Los workflows hacen checkout del repo de datos en `./data` con una deploy key
 ```
 collectors/   common.py (HTTP, reintentos, rate limit, Parquet), roblox.py, roblox_search.py,
               roblox_assets.py, fortnite.py
-config/       collectors.yaml, tiers.yaml, keywords.yaml
-pipeline/     db.py (vistas DuckDB), tiers.py, quality.py, compact.py; próxima: features
+config/       collectors.yaml, tiers.yaml, keywords.yaml, quality.yaml, genres.yaml
+pipeline/     db.py (vistas DuckDB), features.py, tiers.py, quality.py, compact.py
 tests/        pytest + respx, sin red
 scripts/      commit_data.sh
 .github/workflows/

@@ -88,7 +88,7 @@ GAMES_SCHEMA: dict[str, pl.DataType] = {
     "genre_raw": pl.Utf8,
     "genre_l1": pl.Utf8,
     "genre_l2": pl.Utf8,
-    "genre_unified": pl.Utf8,  # Fase 2 (config/genres.yaml)
+    "genre_unified": pl.Utf8,  # vacía: se calcula al leer (pipeline/features.py)
     "age_rating": pl.Utf8,
     "is_officially_licensed": pl.Boolean,
     "max_players": pl.Int32,

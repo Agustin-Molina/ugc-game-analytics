@@ -1,0 +1,122 @@
+# Taxonomía de géneros unificada Roblox ↔ Fortnite (pipeline/features.py → vistas
+# `<plataforma>_game_features` y `<plataforma>_games_enriched`).
+#
+# Se aplica al leer (vistas DuckDB), no se guarda en la dimensión: cambiar este archivo no
+# genera filas nuevas en el log de cambios y la historia completa se reclasifica sola.
+#
+# Fuentes (medido 2026-11-11 sobre 6.098 juegos de Roblox y 287.099 islas de Fortnite):
+# - Roblox: taxonomía oficial `genre_l1` / `genre_l2` (17 × 45 valores; ~20 % sin l2) y el
+#   género legacy `genre_raw` (85 % "All").
+# - Fortnite: ~150 tags de un vocabulario cerrado (99,9 % de las islas tiene alguno). Una isla
+#   tiene varias; gana la regla de más arriba. `genres` lista todas las que matchean.
+
+genres:
+  tycoon: Tycoon
+  simulator: Simulador incremental / idle / clicker
+  vehicle_sim: Simulador de vehículos
+  sandbox_building: Sandbox / construcción / física
+  obby_parkour: Obby / parkour / plataformas / deathrun
+  fighting: Pelea / battlegrounds
+  open_world_action: Acción en mundo abierto
+  shooter: Shooter (modos de armas, PvP genérico)
+  pvp_practice: Práctica PvP de Fortnite (boxfight, zonewars, aim/edit course)
+  battle_royale: Battle royale
+  tower_defense: Tower defense
+  strategy: Estrategia / juegos de mesa / cartas
+  horror: Terror / 1 vs todos
+  survival: Supervivencia / crafting
+  escape: Escape / escape room
+  rpg: RPG / roguelike
+  adventure_story: Aventura / historia / exploración
+  roleplay: Roleplay / vida / avatar / moda
+  party_casual: Party / minijuegos / casual
+  puzzle_quiz: Puzzle / quiz / palabras
+  sports: Deportes
+  racing: Carreras
+  social_hangout: Social / hangout / música / showcase / shopping
+  education: Educativo
+  other: Sin clasificar
+
+# Roblox: reglas en orden, gana la primera que matchea. Campos opcionales: l1, l2, raw
+# (genre_l1, genre_l2, genre_raw); el que falta matchea cualquier valor. `l2: ""` = sin l2.
+roblox:
+  - {l2: Tycoon, genre: tycoon}
+  - {l2: Incremental Simulator, genre: simulator}
+  - {l2: Idle, genre: simulator}
+  - {l2: Vehicle Sim, genre: vehicle_sim}
+  - {l2: Sandbox, genre: sandbox_building}
+  - {l2: Physics Sim, genre: sandbox_building}
+  - {l1: Simulation, genre: simulator}
+  - {l1: Obby & Platformer, genre: obby_parkour}
+  - {l2: Battlegrounds & Fighting, genre: fighting}
+  - {l2: Open World Action, genre: open_world_action}
+  - {l2: Music & Rhythm, genre: party_casual}
+  - {l1: Action, genre: fighting}
+  - {l1: Adventure, genre: adventure_story}
+  - {l1: Education, genre: education}
+  - {l1: Entertainment, genre: social_hangout}
+  - {l1: Social, genre: social_hangout}
+  - {l1: Shopping, genre: social_hangout}
+  - {l2: Quiz, genre: puzzle_quiz}
+  - {l1: Party & Casual, genre: party_casual}
+  - {l2: Escape Room, genre: escape}
+  - {l1: Puzzle, genre: puzzle_quiz}
+  - {l2: Open World & Survival RPG, genre: survival}
+  - {l1: RPG, genre: rpg}
+  - {l1: Roleplay & Avatar Sim, genre: roleplay}
+  - {l2: Battle Royale, genre: battle_royale}
+  - {l1: Shooter, genre: shooter}
+  - {l2: Racing, genre: racing}
+  - {l1: Sports & Racing, genre: sports}
+  - {l2: Tower Defense, genre: tower_defense}
+  - {l1: Strategy, genre: strategy}
+  - {l2: Escape, genre: escape}
+  - {l2: 1 vs All, genre: horror}
+  - {l1: Survival, raw: Horror, genre: horror}
+  - {l1: Survival, genre: survival}
+
+# Fortnite: reglas en orden de prioridad, cada una con sus tags (en minúscula). Gana la
+# primera regla con alguna tag de la isla: los géneros específicos van arriba y las tags
+# genéricas ("pvp", "just for fun") abajo, como desempate.
+fortnite:
+  - {genre: tycoon, tags: [tycoon]}
+  - {genre: tower_defense, tags: [tower defense]}
+  - {genre: battle_royale, tags: [battle royale]}
+  - {genre: horror, tags: [horror, survival horror]}
+  - {genre: escape, tags: [escape]}
+  - {genre: obby_parkour, tags: [deathrun, parkour, platformer, runner]}
+  - {genre: racing, tags: [race]}
+  - {genre: vehicle_sim, tags: [driver simulator]}
+  - {genre: simulator, tags: [simulator, clicker, farming simulator, mining]}
+  - {genre: roleplay, tags: [role playing, fashion]}
+  - {genre: puzzle_quiz, tags: [puzzle, quiz, trivia, word games]}
+  - {genre: sports, tags: [sports]}
+  - {genre: strategy, tags: [strategy, board game, card game, moba, turn-based]}
+  - {genre: rpg, tags: [rpg, roguelike]}
+  - {genre: survival, tags: [survival, crafting, base building]}
+  - {genre: adventure_story,
+     tags: [adventure, story, exploration, mystery, visual novel, choices matter, episodic]}
+  - {genre: party_casual, tags: [prop hunt, party game, minigame, party world, infection, pinball]}
+  - {genre: sandbox_building, tags: [sandbox, physics]}
+  - {genre: pvp_practice, tags: [boxfight, zonewars, edit course, aim course, practice, training]}
+  - {genre: shooter,
+     tags: [team deathmatch, gun game, gun fight, sniper, one shot, shooter, first person,
+            capture the flag, search & destroy, point capture, king of the hill,
+            one in the chamber]}
+  - {genre: fighting, tags: [fighting, melee]}
+  - {genre: open_world_action, tags: [open world]}
+  - {genre: social_hangout, tags: [hub, music, artistic, show]}
+  - {genre: education, tags: [educational, tutorial]}
+  # genéricas: solo deciden si no hubo nada más específico
+  - {genre: shooter,
+     tags: [pvp, free for all, 1v1, 2v2, 3v3, 4v4, 5v5, 6v6, 7v7, 8v8, competitive, battle,
+            arena, action, respawn, building, teams]}
+  - {genre: party_casual, tags: [just for fun, casual, funny, memes, friendly]}
+
+# Features de título: etiquetas entre corchetes/paréntesis ("[UPD]", "(NEW!)", "【EVENT】").
+# Se buscan solo dentro de los corchetes ("New York RP" no es una etiqueta de update).
+# Expresiones RE2 sobre el texto en mayúsculas.
+title_tags:
+  update: '\b(UPD|UPDATE[D]?|NEW|RELEASE[D]?|REWORK|BIG UPDATE|PART ?\d+|CH(APTER)? ?\d+|WORLD ?\d+|V ?\d+(\.\d+)*|\d+\.\d+)\b'
+  beta: '\b(BETA|ALPHA|EARLY ACCESS|SOON|TESTING|DEMO)\b'
+  event: '\b(EVENT|HALLOWEEN|CHRISTMAS|XMAS|EASTER|SUMMER|WINTER|VALENTINE|VALENTINES|THANKSGIVING|SPRING|FALL|AUTUMN|SPOOKY|FORTNITEMARES|WINTERFEST|NEW YEAR|LUNAR|ANNIVERSARY)\b'
