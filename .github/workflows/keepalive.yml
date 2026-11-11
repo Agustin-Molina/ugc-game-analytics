@@ -24,7 +24,7 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          for wf in fortnite_daily.yml roblox_hourly.yml keepalive.yml; do
+          for wf in fortnite_daily.yml roblox_hourly.yml roblox_search.yml quality_daily.yml \n                    compact_weekly.yml keepalive.yml; do
             gh api -X PUT "repos/${REPO}/actions/workflows/${wf}/enable"
             echo "habilitado: ${wf}"
           done
