@@ -21,7 +21,7 @@ Los datos viven en un repo aparte: **[ugc-game-analytics-data](https://github.co
 |---|---|
 | 0 — Colector mínimo | ✅ todos los crons activos (2026-11-10) |
 | 1 — Robustez (tiers, calidad, keywords, compactación) | ✅ completa (2026-11-11) |
-| 2 — Enriquecimiento | en curso: ícono, miniaturas, gamepasses, géneros unificados, features de título, historial del creador y clones listos |
+| 2 — Enriquecimiento | en curso: ícono, miniaturas, gamepasses, géneros unificados, features de título, historial del creador, clones y métricas derivadas listos; falta mudar el almacenamiento (~500 MB) |
 | 3 — Análisis | pendiente |
 
 ## Fuentes
@@ -204,6 +204,26 @@ tocar los datos.
 con.sql("select genre_unified, count(*) from fortnite_game_features group by 1 order by 2 desc")
 ```
 
+### Métricas derivadas
+
+[`pipeline/metrics.py`](pipeline/metrics.py) arma una serie diaria por juego
+(`roblox_daily`, `fortnite_daily`; solo días cerrados) y, sobre ella,
+`<plataforma>_game_metrics`. El día 0 es el de la primera tracción (CCU ≥ umbral):
+
+| métrica | qué mide |
+|---|---|
+| `days_to_peak`, `days_since_peak` | días desde la primera tracción hasta el máximo, y desde el máximo |
+| `slope_d1_7`, `slope_d1_14` | pendiente de ln(1 + peak diario) en los días 0–6 y 0–13 (0,1 ≈ +10 %/día) |
+| `half_life_days` | días desde el peak hasta caer a la mitad (null si todavía no cayó) |
+| `peak_over_median` | peak / mediana de los peaks diarios: pico aislado vs. tracción pareja |
+| `sustained_ratio` | peak promedio de los días 30–60 / peak (la definición de "sostenido") |
+| Roblox: `favorites_per_visit`, `like_ratio`, `visits_per_day_7d` | engagement y ritmo actual |
+| Fortnite: `favorites_per_player`, `recommendations_per_player`, `retention_d1_mean`, `retention_d7_mean` | engagement y retención |
+
+`traction_censored` marca los juegos que ya tenían tracción cuando empezamos a mirarlos: no
+sabemos cuándo despegaron, así que para estudiar lanzamientos hay que filtrarlos. Los juegos
+cold se miran una vez por semana: su serie diaria tiene huecos.
+
 ### Leer con DuckDB
 
 ```python
@@ -265,7 +285,8 @@ Los workflows hacen checkout del repo de datos en `./data` con una deploy key
 collectors/   common.py (HTTP, reintentos, rate limit, Parquet), roblox.py, roblox_search.py,
               roblox_assets.py, roblox_creators.py, fortnite.py
 config/       collectors.yaml, tiers.yaml, keywords.yaml, quality.yaml, genres.yaml
-pipeline/     db.py (vistas DuckDB), features.py, clones.py, tiers.py, quality.py, compact.py
+pipeline/     db.py (vistas DuckDB), features.py, clones.py, metrics.py, tiers.py, quality.py,
+              compact.py
 tests/        pytest + respx, sin red
 scripts/      commit_data.sh
 .github/workflows/

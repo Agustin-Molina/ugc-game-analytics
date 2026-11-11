@@ -89,7 +89,7 @@ También es un proyecto de portfolio de data: código limpio, README claro, data
 - [x] Detección de clones por similitud de nombre/descripción (por título; la descripción queda para más adelante).
 - [x] Taxonomía de géneros unificada Roblox↔Fortnite (`config/genres.yaml`).
 - [x] Detección de eventos (cambios de nombre/descripción/update).
-- [ ] Métricas derivadas: días hasta el peak, pendiente días 1–7 y 1–14, vida media de la caída,
+- [x] Métricas derivadas: días hasta el peak, pendiente días 1–7 y 1–14, vida media de la caída,
       favoritos/visita, like ratio, peak/mediana.
 - [ ] Mover almacenamiento a dataset de Kaggle o Hugging Face si el repo pasa ~500 MB.
 

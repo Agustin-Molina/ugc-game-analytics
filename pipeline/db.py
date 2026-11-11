@@ -15,6 +15,9 @@ Vistas creadas (solo las de tablas que ya tienen archivos):
                                  (la fila con `snapshot_at` más reciente por bucket)
 - `<plataforma>_game_features`   género unificado (config/genres.yaml) + features de título
 - `<plataforma>_games_enriched`  `<plataforma>_games` + esas features (pipeline/features.py)
+- `title_clones`                 familias de títulos entre plataformas (pipeline/clones.py)
+- `<plataforma>_daily`, `<plataforma>_game_metrics`  serie diaria y métricas derivadas
+                                 (días hasta el peak, pendientes, vida media; pipeline/metrics.py)
 
 `python -m pipeline.db [--data-dir PATH]` lista las vistas y sus filas.
 """
@@ -28,6 +31,7 @@ import duckdb
 
 from collectors.common import resolve_data_dir
 from pipeline.features import register as register_features
+from pipeline.metrics import register as register_metrics
 
 DIMENSION_KEYS = {"roblox": "universe_id", "fortnite": "island_code"}
 # otros logs de cambios (valid_from): tabla → clave
@@ -92,6 +96,7 @@ def connect(
         )
     if features:
         register_features(con)
+        register_metrics(con)
     return con
 
 
