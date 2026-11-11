@@ -5,7 +5,6 @@ import pytest
 
 from collectors.common import (
     TS,
-    group_of,
     read_dimension,
     write_dimension_changes,
     write_partition,
@@ -19,7 +18,8 @@ R_SNAP = {"snapshot_at": TS, "universe_id": pl.Int64, "playing": pl.Int64,
           "visits": pl.Int64, "favorites": pl.Int64, "up_votes": pl.Int64,
           "down_votes": pl.Int64}
 R_DIM = {"universe_id": pl.Int64, "first_seen_at": TS, "tier": pl.Utf8}
-F_DIM = {"island_code": pl.Utf8, "first_seen_at": TS, "is_listed": pl.Boolean}
+F_DIM = {"island_code": pl.Utf8, "first_seen_at": TS, "is_listed": pl.Boolean,
+         "tier": pl.Utf8}
 F_LOG = {"island_code": pl.Utf8, "snapshot_at": TS, "interval": pl.Utf8, "status": pl.Utf8}
 F_SNAP = {"island_code": pl.Utf8, "interval": pl.Utf8, "bucket_start": TS, "snapshot_at": TS,
           "plays": pl.Int64, "unique_players": pl.Int64, "peak_ccu": pl.Int64,
@@ -100,67 +100,59 @@ def test_roblox_problems(tmp_path, rules):
     assert c["orphan_snapshots"].value == 1
 
 
-def fortnite_codes(n_groups=5):
-    """Códigos de prueba agrupados por grupo de hash."""
-    out: dict[int, list[str]] = {}
-    i = 0
-    while min((len(v) for v in out.values()), default=0) < 3 or len(out) < n_groups:
-        code = f"0000-0000-{i:04d}"
-        out.setdefault(group_of(code, n_groups), []).append(code)
-        i += 1
-    return out
+def flog(rows: list[tuple[str, datetime, str]]) -> pl.DataFrame:
+    return pl.DataFrame([{"island_code": c, "snapshot_at": t, "interval": "day", "status": s}
+                         for c, t, s in rows], schema=F_LOG)
 
 
 def test_fortnite(tmp_path, rules):
-    groups = fortnite_codes()
-    g0, g1 = groups[0][:3], groups[1][:2]
-    dim = pl.DataFrame({"island_code": g0 + g1, "first_seen_at": [NOW - 240 * H] * 5,
-                        "is_listed": [True] * 5}, schema=F_DIM)
+    dim = pl.DataFrame({"island_code": list("ABCDE"), "first_seen_at": [NOW - 240 * H] * 5,
+                        "is_listed": [True] * 5,
+                        "tier": ["hot", "warm", "cold", "warm", "cold"]}, schema=F_DIM)
     write_dim(tmp_path, "fortnite", "island_code", dim)
     t = NOW - 8 * H
-    log = pl.DataFrame([{"island_code": c, "snapshot_at": t, "interval": "day",
-                         "status": s} for c, s in zip(g0[:2], ["ok", "error"], strict=True)],
-                       schema=F_LOG)
-    write_partition(log, tmp_path, "fortnite", "fetch_log", t, "f1")
+    write_partition(flog([("A", t, "ok"), ("B", t, "error")]), tmp_path, "fortnite",
+                    "fetch_log", t, "f1")
     snaps = pl.DataFrame([
-        {"island_code": g0[0], "interval": "day", "bucket_start": NOW - 24 * H,
+        {"island_code": "A", "interval": "day", "bucket_start": NOW - 24 * H,
          "snapshot_at": t, "plays": 10, "unique_players": 8, "peak_ccu": 9,
          "avg_minutes_per_player": 30.0, "retention_d1": 1.5, "retention_d7": 0.1},
-        {"island_code": g0[0], "interval": "hour", "bucket_start": NOW - 20 * H,
+        {"island_code": "A", "interval": "hour", "bucket_start": NOW - 20 * H,
          "snapshot_at": t, "plays": 10, "unique_players": 8, "peak_ccu": 3,
          "avg_minutes_per_player": 75.0},
     ], schema=F_SNAP)
     write_partition(snaps, tmp_path, "fortnite", "snapshots", t, "f1")
 
-    c = by_name(quality.check_fortnite(quality.connect(tmp_path), NOW, rules, 5))
+    c = by_name(quality.check_fortnite(quality.connect(tmp_path), NOW, rules))
     assert c["last_run_age_hours"].status == quality.OK
     assert c["fetch_error_share"].value == 0.5
-    assert c["group_missing_share"].value == pytest.approx(1 / 3)
-    assert "grupo 0" in c["group_missing_share"].detail
-    assert c["uncovered_share"].status == quality.SKIP  # 8 h de historia
+    assert {c[f"overdue_{x}"].status for x in ("hot", "warm", "cold")} == {quality.SKIP}
     assert c["retention_out_of_range"].value == 1
     assert c["peak_above_unique"].value == 1
     assert c["minutes_above_bucket"].value == 1
     assert c["snapshot_duplicates"].status == quality.OK
 
-    # con 7 días de historia, las islas sin consulta en 6 días se cuentan
-    old = NOW - 7 * 24 * H
-    write_partition(pl.DataFrame([{"island_code": g1[0], "snapshot_at": old,
-                                   "interval": "day", "status": "ok"}], schema=F_LOG),
-                    tmp_path, "fortnite", "fetch_log", old, "f0")
-    c = by_name(quality.check_fortnite(quality.connect(tmp_path), NOW, rules, 5))
-    assert c["uncovered_share"].value == pytest.approx(3 / 5)  # g0[2] y los dos de g1
+    # con 9 días de historia: atrasos por tier (hot 2,5 d · warm 6 d · cold 8 d)
+    for code, days in (("D", 9), ("C", 3)):
+        ts = NOW - days * 24 * H
+        write_partition(flog([(code, ts, "ok")]), tmp_path, "fortnite", "fetch_log", ts,
+                        f"old{code}")
+    c = by_name(quality.check_fortnite(quality.connect(tmp_path), NOW, rules))
+    assert c["overdue_hot"].value == 0                  # A, hace 8 h
+    assert c["overdue_warm"].value == 1.0               # B con error, D hace 9 días
+    assert c["overdue_cold"].value == 0.5               # C hace 3 días; E nunca
+    assert c["overdue_warm"].status == quality.ERROR
 
 
 def test_fortnite_without_recent_runs(tmp_path, rules):
     dim = pl.DataFrame({"island_code": ["A"], "first_seen_at": [NOW - 100 * H],
-                        "is_listed": [True]}, schema=F_DIM)
+                        "is_listed": [True], "tier": ["warm"]}, schema=F_DIM)
     write_dim(tmp_path, "fortnite", "island_code", dim)
     old = NOW - 5 * 24 * H
     write_partition(pl.DataFrame([{"island_code": "A", "snapshot_at": old,
                                    "interval": "day", "status": "ok"}], schema=F_LOG),
                     tmp_path, "fortnite", "fetch_log", old, "f0")
-    c = by_name(quality.check_fortnite(quality.connect(tmp_path), NOW, rules, 5))
+    c = by_name(quality.check_fortnite(quality.connect(tmp_path), NOW, rules))
     assert c["last_run_age_hours"].status == quality.ERROR
 
 

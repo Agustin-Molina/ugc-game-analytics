@@ -3,11 +3,14 @@
 1. Pagina /islands (catálogo completo, solo en memoria).
 2. Actualiza la dimensión `games` y registra en `events` islas nuevas / desaparecidas /
    re-listadas y cambios de título, tags o categoría.
-3. Consulta métricas `day` (7 días, con retención) del grupo del día: hash(code) % 5.
-   La API guarda 7 días y cada isla se visita cada 5 → 2 días de solapamiento.
-4. Para islas con max(peakCCU) >= umbral, baja también la curva `hour` de 7 días.
+3. Elige qué islas consultar según su tier (config/tiers.yaml): hot todos los días, warm
+   cada 5 (la API guarda 7 → 2 días de solapamiento), cold cada 7, más las atrasadas.
+4. Consulta métricas `day` (7 días, con retención). Para islas con max(peakCCU) >= umbral
+   baja también la curva `hour`, solo desde la última que ya tenemos.
+5. Recalcula los tiers con lo recién bajado y registra los cambios en `tier_history`.
 
 Uso: python -m collectors.fortnite [--group N] [--limit N] [--data-dir PATH] [--dry-run]
+(`--group N` ignora los tiers y consulta todas las islas listadas de ese grupo de 5.)
 """
 
 from __future__ import annotations
@@ -33,7 +36,6 @@ from collectors.common import (
     floor_day,
     floor_hour,
     frame,
-    group_for_date,
     group_of,
     iso_z,
     load_config,
@@ -46,6 +48,7 @@ from collectors.common import (
     write_dimension_changes,
     write_partition,
 )
+from pipeline import tiers
 
 PLATFORM = "fortnite"
 KEY = "island_code"
@@ -313,7 +316,8 @@ class MetricsFetcher:
     """Pool de workers que consulta métricas respetando rate limit y deadline."""
 
     def __init__(self, http: Http, cfg: dict, limiter: RateLimiter, summary: RunSummary,
-                 deadline: float):
+                 deadline: float, last_hour: dict[str, datetime] | None = None):
+        self.last_hour = last_hour or {}  # última curva horaria ya bajada, por isla
         self.http = http
         self.fcfg = cfg["fortnite"]
         self.limiter = limiter
@@ -327,6 +331,9 @@ class MetricsFetcher:
 
     async def _fetch(self, code: str, interval: str) -> tuple[list[dict], dict]:
         frm, to = metrics_window(utcnow(), int(self.fcfg["window_days"]))
+        if interval == "hour" and (prev := self.last_hour.get(code)) is not None:
+            # solo las horas nuevas (+2 h por si la última estaba incompleta)
+            frm = max(frm, iso_z(floor_hour(prev) - timedelta(hours=2)))
         url = f"{self.fcfg['base_url']}/islands/{code}/metrics/{interval}"
         entry: dict[str, Any] = {"island_code": code, "interval": interval}
         try:
@@ -404,6 +411,50 @@ def select_today(dim: pl.DataFrame, group: int, n_groups: int) -> list[str]:
     return sel["island_code"].to_list()
 
 
+HISTORY_SNAP_COLS = ["island_code", "interval", "bucket_start", "snapshot_at", "peak_ccu"]
+HISTORY_SNAP_SCHEMA = {c: SNAPSHOT_SCHEMA[c] for c in HISTORY_SNAP_COLS}
+
+
+def _fetched(log_df: pl.DataFrame) -> pl.DataFrame:
+    """Islas con alguna consulta `day` (con o sin datos; 404 cuenta como consultada)."""
+    day = log_df.filter((pl.col("interval") == "day") & (pl.col("status") != "error"))
+    return day.select("island_code").unique()
+
+
+def _last_fetch(log_df: pl.DataFrame, interval: str) -> pl.DataFrame:
+    """(island_code, last_at) de la última consulta exitosa del intervalo."""
+    return (
+        log_df.filter((pl.col("interval") == interval) & (pl.col("status") == "ok"))
+        .group_by("island_code").agg(pl.col("snapshot_at").max().alias("last_at"))
+    )
+
+
+def _retier(dim: pl.DataFrame, hist_day: pl.DataFrame, hist_log: pl.DataFrame,
+            run_logs: list[pl.DataFrame], run_snaps: pl.DataFrame, now: datetime,
+            rules: dict, summary: RunSummary, write) -> pl.DataFrame:
+    """Recalcula tiers de las islas listadas con historia + esta corrida y escribe los
+    cambios en tier_history. Las no listadas conservan el tier que tenían."""
+    logs = pl.concat([hist_log, *run_logs], how="vertical_relaxed")
+    day = pl.concat([hist_day, run_snaps.filter(pl.col("interval") == "day")],
+                    how="vertical_relaxed")
+    listed = dim.filter(pl.col("is_listed"))
+    assigned = tiers.assign_fortnite_tiers(listed, day, _fetched(logs), now, rules)
+    changes = tiers.tier_changes(listed, assigned, now, key=KEY)
+    write("tier_history", changes.cast(tiers.FORTNITE_TIER_HISTORY_SCHEMA))
+    counts = dict(assigned.group_by("tier").len().iter_rows())
+    summary.notes.append(
+        "tiers: " + " · ".join(f"{t} {counts.get(t, 0)}" for t in (tiers.HOT, tiers.WARM,
+                                                                    tiers.COLD))
+        + f" · cambios: {changes.height}")
+    new_tier = assigned.select(KEY, pl.col("tier").alias("_tier"))
+    return (
+        dim.join(new_tier, on=KEY, how="left")
+        .with_columns(pl.coalesce("_tier", "tier").alias("tier"))
+        .drop("_tier")
+        .cast(GAMES_SCHEMA)
+    )
+
+
 # --------------------------------------------------------------------------- main
 
 
@@ -414,15 +465,24 @@ async def run(
     limit: int | None = None,
     dry_run: bool = False,
     codes_override: list[str] | None = None,
+    tier_rules: dict | None = None,
 ) -> RunSummary:
     fcfg = cfg["fortnite"]
+    rules = tier_rules or tiers.load_rules(PLATFORM)
     run_id = new_run_id()
     summary = RunSummary(PLATFORM, run_id)
     started = summary.started_at
     deadline = time.monotonic() + float(fcfg["deadline_minutes"]) * 60
     n_groups = int(fcfg["n_groups"])
-    group = group_for_date(started, n_groups) if group is None else group
     dim = read_dimension(data_dir, PLATFORM, GAMES_SCHEMA, KEY)
+    since = started - timedelta(days=int(rules["window_days"]))
+    hist_log = tiers.read_recent(data_dir, PLATFORM, "fetch_log", list(FETCH_LOG_SCHEMA),
+                                 since)
+    hist_log = (pl.DataFrame(schema=FETCH_LOG_SCHEMA) if hist_log is None
+                else hist_log.cast(FETCH_LOG_SCHEMA))
+    hist_day = tiers.read_recent(data_dir, PLATFORM, "snapshots", HISTORY_SNAP_COLS, since)
+    hist_day = (pl.DataFrame(schema=HISTORY_SNAP_SCHEMA) if hist_day is None
+                else hist_day.cast(HISTORY_SNAP_SCHEMA).filter(pl.col("interval") == "day"))
     persisted = [dim]  # último estado escrito al log de la dimensión
     # Un catálogo recortado (--limit) o códigos sueltos (--codes) son pruebas: si se
     # persistieran, la próxima corrida completa vería ~287k islas "nuevas" en vez de una
@@ -449,6 +509,7 @@ async def run(
         persisted[0] = new_dim
 
     all_snaps: list[pl.DataFrame] = []
+    all_logs: list[pl.DataFrame] = []
 
     def flush(batch: tuple[list[dict], list[dict]]) -> None:
         snaps = frame(batch[0], SNAPSHOT_SCHEMA)
@@ -456,7 +517,8 @@ async def run(
         part[0] += 1
         write("snapshots", snaps)
         write("fetch_log", logs)
-        all_snaps.append(snaps.select("island_code", "interval", "bucket_start", "peak_ccu"))
+        all_snaps.append(snaps.select(HISTORY_SNAP_COLS))
+        all_logs.append(logs)
         log.info("flush p%03d: %d filas de snapshots", part[0], snaps.height)
 
     limiter = RateLimiter(float(fcfg["rate_per_s"]), adaptive=True)
@@ -474,20 +536,41 @@ async def run(
             if persist_dim:
                 write("events", events)
                 write_dim(dim)  # persistir altas/bajas aunque después falle algo
-            codes = select_today(dim, group, n_groups)
+            if group is not None:
+                codes = select_today(dim, group, n_groups)
+                summary.notes.append(f"grupo {group}/{n_groups} (sin tiers): "
+                                     f"{len(codes)} islas a consultar")
+            else:
+                listed = dim.filter(pl.col("is_listed"))
+                # tiers con la historia: las islas nuevas del catálogo de hoy ya entran hot
+                planned = tiers.assign_fortnite_tiers(
+                    listed, hist_day, _fetched(hist_log), started, rules)
+                codes, counts = tiers.select_fortnite_due(
+                    planned, _last_fetch(hist_log, "day"), started, rules["cadence"])
+                summary.notes.append(
+                    f"{len(codes)} islas a consultar: "
+                    + " · ".join(f"{k} {v}" for k, v in counts.items()))
             if limit:
                 codes = codes[:limit]
         else:
             codes = codes_override
-        summary.notes.append(f"grupo {group}/{n_groups}: {len(codes)} islas a consultar")
+            summary.notes.append(f"{len(codes)} islas a consultar (--codes)")
 
-        fetcher = MetricsFetcher(http, cfg, limiter, summary, deadline)
+        last_hour = _last_fetch(hist_log, "hour")
+        fetcher = MetricsFetcher(http, cfg, limiter, summary, deadline, dict(
+            zip(last_hour["island_code"].to_list(), last_hour["last_at"].to_list(),
+                strict=True)))
         await fetcher.run(codes, flush)
         flush(fetcher.take())
 
-    snaps_all = pl.concat(all_snaps) if all_snaps else pl.DataFrame(schema=SNAPSHOT_SCHEMA)
+    snaps_all = (pl.concat(all_snaps) if all_snaps
+                 else pl.DataFrame(schema=HISTORY_SNAP_SCHEMA))
     if persist_dim:
-        write_dim(apply_traction(dim, snaps_all, int(fcfg["traction_min_ccu"])))
+        new_dim = apply_traction(dim, snaps_all, int(fcfg["traction_min_ccu"]))
+        if group is None:
+            new_dim = _retier(new_dim, hist_day, hist_log, all_logs, snaps_all, started, rules,
+                              summary, write)
+        write_dim(new_dim)
     else:
         summary.notes.append("prueba (--limit/--codes): dimensión y events no se persisten")
 

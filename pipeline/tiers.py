@@ -1,12 +1,12 @@
 """Tiers de tracking (hot / warm / cold) con reglas configurables en `config/tiers.yaml`.
 
-Dos piezas, que el colector usa en cada corrida:
+Dos piezas por plataforma, que el colector usa en cada corrida:
 
-- `select_due`: qué juegos consultar ahora según su tier (hot siempre; warm y cold repartidos
-  por hash del id en slots horarios, más los atrasados).
-- `assign_roblox_tiers`: recalcula el tier de cada juego con la historia reciente
-  (snapshots + chart_positions). Sin estado extra en la dimensión: la histéresis sale de
-  mirar `hold_hours` hacia atrás. Los cambios van a `tier_history`.
+- `select_due` / `select_fortnite_due`: qué consultar ahora según el tier (hot siempre; warm
+  y cold repartidos por hash del id en slots horarios o diarios, más los atrasados).
+- `assign_roblox_tiers` / `assign_fortnite_tiers`: recalculan el tier con la historia
+  reciente. Sin estado extra en la dimensión: la histéresis sale de la ventana que se mira.
+  Los cambios van a `tier_history`.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from typing import Any
 
 import polars as pl
 
-from collectors.common import ROOT, TS, group_of, load_config
+from collectors.common import ROOT, TS, floor_day, group_of, load_config
 
 TIERS_PATH = ROOT / "config" / "tiers.yaml"
 HOT, WARM, COLD = "hot", "warm", "cold"
@@ -25,6 +25,13 @@ HOT, WARM, COLD = "hot", "warm", "cold"
 TIER_HISTORY_SCHEMA: dict[str, pl.DataType] = {
     "changed_at": TS,
     "universe_id": pl.Int64,
+    "from_tier": pl.Utf8,
+    "to_tier": pl.Utf8,
+    "reason": pl.Utf8,
+}
+FORTNITE_TIER_HISTORY_SCHEMA: dict[str, pl.DataType] = {
+    "changed_at": TS,
+    "island_code": pl.Utf8,
     "from_tier": pl.Utf8,
     "to_tier": pl.Utf8,
     "reason": pl.Utf8,
@@ -162,7 +169,7 @@ def tier_changes(
     )
     return changed.select(
         pl.lit(now).cast(TS).alias("changed_at"),
-        pl.col(key).cast(pl.Int64),
+        pl.col(key),
         "from_tier",
         pl.col("tier").alias("to_tier"),
         "reason",
@@ -205,3 +212,103 @@ def select_due(
     overdue = overdue[: int(cadence["max_overdue_per_run"])]
     counts["overdue"] = len(overdue)
     return due + overdue, counts
+
+
+# --------------------------------------------------------------------------- Fortnite
+
+
+def _first_match(rules_list: list[tuple[pl.Expr, str, str]], default: tuple[str, str]
+                 ) -> tuple[pl.Expr, pl.Expr]:
+    """(tier, motivo) de la primera regla que se cumple, en orden."""
+    cond, tier, reason = rules_list[0]
+    tier_expr = pl.when(cond.fill_null(False)).then(pl.lit(tier))
+    reason_expr = pl.when(cond.fill_null(False)).then(pl.lit(reason))
+    for cond, tier, reason in rules_list[1:]:
+        tier_expr = tier_expr.when(cond.fill_null(False)).then(pl.lit(tier))
+        reason_expr = reason_expr.when(cond.fill_null(False)).then(pl.lit(reason))
+    return tier_expr.otherwise(pl.lit(default[0])), reason_expr.otherwise(pl.lit(default[1]))
+
+
+def assign_fortnite_tiers(
+    dim: pl.DataFrame,
+    day_snaps: pl.DataFrame,
+    fetched: pl.DataFrame,
+    now: datetime,
+    rules: dict[str, Any],
+) -> pl.DataFrame:
+    """Tier y motivo de cada isla de `dim` → (island_code, tier, reason).
+
+    `day_snaps` (island_code, bucket_start, snapshot_at, peak_ccu; solo interval day) y
+    `fetched` (island_code: consultadas, con o sin datos) cubren `window_days` hacia atrás.
+    Cada consulta trae 7 días, así que la última de cada isla alcanza para decidir.
+    """
+    hot = rules["hot"]
+    key = "island_code"
+    today = floor_day(now)
+    bucket = pl.col("bucket_start")
+    peak = pl.col("peak_ccu")
+    latest = (  # por solapamiento, el mismo bucket puede venir de varias consultas
+        day_snaps.sort("snapshot_at").unique([key, "bucket_start"], keep="last")
+    )
+    stats = latest.group_by(key).agg(
+        peak.filter(bucket >= today - timedelta(days=7)).max().alias("peak7"),
+        peak.filter(bucket >= today - timedelta(days=2)).max().alias("recent"),
+        peak.filter((bucket >= today - timedelta(days=6)) & (bucket < today - timedelta(days=2)))
+        .max().alias("prev"),
+        peak.is_not_null().any().alias("has_data"),
+    )
+    seen = fetched.select(key).unique().with_columns(pl.lit(True).alias("fetched"))
+
+    # Las islas de la carga inicial comparten first_seen_at (el mínimo): no son "nuevas".
+    initial_load = dim["first_seen_at"].min()
+    is_new = (
+        (pl.col("first_seen_at") > pl.lit(initial_load, dtype=TS))
+        & (pl.col("first_seen_at") >= now - timedelta(days=hot["new_days"]))
+    ) if initial_load is not None else pl.lit(False)
+    growth = (pl.col("recent") >= hot["growth_min_peak"]) & (
+        pl.col("recent") >= hot["growth_ratio"] * pl.col("prev").fill_null(0)
+    )
+    tier, reason = _first_match([
+        (pl.col("peak7") >= hot["min_peak_ccu"], HOT, f"peak>={hot['min_peak_ccu']}"),
+        (growth, HOT, "growth"),
+        (is_new, HOT, "new"),
+        (pl.col("has_data"), WARM, "has_data"),
+        (pl.col("fetched").is_null(), WARM, "no_fetch"),
+    ], (COLD, "no_data"))
+    return (
+        dim.select(key, "first_seen_at")
+        .join(stats, on=key, how="left")
+        .join(seen, on=key, how="left")
+        .select(key, tier.alias("tier"), reason.alias("reason"))
+    )
+
+
+def select_fortnite_due(
+    dim: pl.DataFrame,
+    last_fetch: pl.DataFrame,
+    now: datetime,
+    cadence: dict[str, Any],
+) -> tuple[list[str], dict[str, int]]:
+    """Islas a consultar hoy (hot primero, después atrasadas, warm y cold) y conteo.
+
+    hot: todos los días. warm / cold: cuando el slot diario (hash del código) coincide con
+    el día, o si pasaron cadencia + `overdue_slack_days` días desde la última consulta.
+    """
+    day = now.date().toordinal()
+    days = {WARM: int(cadence["warm_days"]), COLD: int(cadence["cold_days"])}
+    slack = float(cadence["overdue_slack_days"])
+    overdue_after = {t: timedelta(days=n + slack) for t, n in days.items()}
+    last = dict(zip(last_fetch["island_code"].to_list(), last_fetch["last_at"].to_list(),
+                    strict=True))
+    picked: dict[str, list[str]] = {HOT: [], "overdue": [], WARM: [], COLD: []}
+    for code, tier in zip(dim["island_code"].to_list(), dim["tier"].to_list(), strict=True):
+        tier = tier if tier in days or tier == HOT else WARM  # null/desconocido → warm
+        if tier == HOT:
+            picked[HOT].append(code)
+        elif group_of(code, days[tier]) == day % days[tier]:
+            picked[tier].append(code)
+        elif (seen := last.get(code)) is not None and now - seen > overdue_after[tier]:
+            picked["overdue"].append(code)
+    picked["overdue"] = picked["overdue"][: int(cadence["max_overdue_per_run"])]
+    codes = [c for group in picked.values() for c in group]
+    return codes, {k: len(v) for k, v in picked.items()}

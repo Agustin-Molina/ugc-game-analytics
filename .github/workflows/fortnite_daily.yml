@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       group:
-        description: "Grupo a consultar 0-4 (vacío = el del día)"
+        description: "Grupo de 5 entero, sin tiers (0-4); vacío = islas que tocan por tier"
         required: false
         default: ""
       limit:

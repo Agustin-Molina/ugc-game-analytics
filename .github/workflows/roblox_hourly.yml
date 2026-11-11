@@ -7,6 +7,9 @@ name: roblox_hourly
 # respaldo para retomar la cadena si se corta; si la cadena está corriendo, el run del cron
 # queda en espera y lo reemplaza el siguiente eslabón (la concurrencia evita solapamientos).
 #
+# Además, después de cada corrida lanza los workflows diarios (Fortnite, búsqueda, calidad)
+# si su cron no disparó (scripts/dispatch_missed.sh).
+#
 # Para cortar la cadena: cancelar el run en curso (el encadenado no corre si se cancela) y
 # desactivar el workflow si el cron no debe retomarla.
 on:
@@ -73,6 +76,8 @@ jobs:
 
       - name: Colectar Roblox cada hora a las :17 (loop de ~5,5 h)
         if: env.LOOP == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}  # para lanzar los diarios que el cron salteó
         run: bash scripts/hourly_loop.sh data 17 335
 
       - name: Encadenar el siguiente run

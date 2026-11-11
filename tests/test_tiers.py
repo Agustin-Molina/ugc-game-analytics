@@ -118,3 +118,90 @@ def test_read_recent_prunes_by_partition(tmp_path):
                             ["universe_id", "playing", "snapshot_at"], NOW - timedelta(days=11))
     assert got["playing"].to_list() == [7]
     assert tiers.read_recent(tmp_path, "roblox", "events", ["snapshot_at"], NOW) is None
+
+
+# --------------------------------------------------------------------------- Fortnite
+
+F_RULES = tiers.load_rules("fortnite")
+DAY = timedelta(days=1)
+TODAY = datetime(2026, 11, 10, tzinfo=UTC)
+
+
+def day_snaps(rows: list[tuple[str, datetime, int | None]]) -> pl.DataFrame:
+    """(isla, bucket, peak); snapshot_at = NOW."""
+    return pl.DataFrame([(c, b, NOW, p) for c, b, p in rows],
+                        schema={"island_code": pl.Utf8, "bucket_start": TS, "snapshot_at": TS,
+                                "peak_ccu": pl.Int64}, orient="row")
+
+
+def test_assign_fortnite_tiers_rules():
+    load = NOW - 5 * DAY
+    codes = ["PEAK", "GROW", "FLAT", "NEW", "OLDNEW", "DATA", "NOFETCH", "EMPTY"]
+    dim = pl.DataFrame(
+        {"island_code": codes,
+         "first_seen_at": [load] * 3 + [NOW - DAY, NOW - 4 * DAY] + [load] * 3},
+        schema={"island_code": pl.Utf8, "first_seen_at": TS},
+    )
+    s = day_snaps([
+        ("PEAK", TODAY - 6 * DAY, 80), ("PEAK", TODAY - DAY, 10),
+        ("GROW", TODAY - 5 * DAY, 10), ("GROW", TODAY - DAY, 25),   # 25 >= 2 × 10
+        ("FLAT", TODAY - 5 * DAY, 15), ("FLAT", TODAY - DAY, 25),   # 25 < 2 × 15
+        ("DATA", TODAY - 9 * DAY, 300),                             # fuera de los 7 días
+        ("EMPTY", TODAY - DAY, None),
+    ])
+    fetched = pl.DataFrame({"island_code": [c for c in codes if c != "NOFETCH"]})
+    got = tiers.assign_fortnite_tiers(dim, s, fetched, NOW, F_RULES)
+    out = {r["island_code"]: (r["tier"], r["reason"]) for r in got.iter_rows(named=True)}
+    assert out == {
+        "PEAK": ("hot", "peak>=50"),
+        "GROW": ("hot", "growth"),
+        "FLAT": ("warm", "has_data"),
+        "NEW": ("hot", "new"),          # llegó al catálogo después de la carga inicial
+        "OLDNEW": ("cold", "no_data"),  # nueva hace 4 días (> 3) y sin datos
+        "DATA": ("warm", "has_data"),
+        "NOFETCH": ("warm", "no_fetch"),
+        "EMPTY": ("cold", "no_data"),
+    }
+
+
+def test_assign_fortnite_tiers_uses_latest_fetch_of_each_bucket():
+    dim = pl.DataFrame({"island_code": ["A"], "first_seen_at": [NOW - 9 * DAY]},
+                       schema={"island_code": pl.Utf8, "first_seen_at": TS})
+    s = pl.DataFrame(
+        [("A", TODAY - DAY, NOW - 2 * DAY, 90), ("A", TODAY - DAY, NOW, 30)],
+        schema={"island_code": pl.Utf8, "bucket_start": TS, "snapshot_at": TS,
+                "peak_ccu": pl.Int64}, orient="row")
+    got = tiers.assign_fortnite_tiers(dim, s, pl.DataFrame({"island_code": ["A"]}), NOW,
+                                      F_RULES)
+    assert got["tier"].to_list() == ["hot"]  # 30 con growth (sin datos antes), no por 90
+    assert got["reason"].to_list() == ["growth"]
+
+
+def test_select_fortnite_due():
+    cad = F_RULES["cadence"]
+    day = NOW.date().toordinal()
+    codes = [f"C{i}" for i in range(400)]
+
+    def pick(n: int, k: int, hit: bool, used: set) -> str:
+        for c in codes:
+            if c not in used and (group_of(c, n) == day % n) == hit:
+                used.add(c)
+                return c
+        raise AssertionError
+
+    used: set[str] = set()
+    warm_due = pick(cad["warm_days"], 0, True, used)
+    warm_not = pick(cad["warm_days"], 0, False, used)
+    warm_late = pick(cad["warm_days"], 0, False, used)
+    cold_due = pick(cad["cold_days"], 0, True, used)
+    cold_not = pick(cad["cold_days"], 0, False, used)
+    dim = pl.DataFrame({
+        "island_code": ["HOT", warm_due, warm_not, warm_late, cold_due, cold_not],
+        "tier": ["hot", "warm", "warm", "warm", "cold", "cold"]})
+    last = pl.DataFrame(
+        {"island_code": [warm_not, warm_late, cold_not],
+         "last_at": [NOW - 2 * DAY, NOW - 6.5 * DAY, NOW - 7.5 * DAY]},  # cold: 7 + 1 = 8
+        schema={"island_code": pl.Utf8, "last_at": TS})
+    got, counts = tiers.select_fortnite_due(dim, last, NOW, cad)
+    assert got == ["HOT", warm_late, warm_due, cold_due]  # hot, atrasadas, warm, cold
+    assert counts == {"hot": 1, "overdue": 1, "warm": 1, "cold": 1}

@@ -6,7 +6,8 @@ Dos datasets vivos, recolectados automáticamente con GitHub Actions:
   en los charts de explore y en un barrido diario de búsqueda por keywords (long tail), con
   cadencia por tier (hot cada hora, warm diario, cold semanal).
 - **Fortnite islands**: métricas diarias (plays, jugadores únicos, peak CCU, minutos,
-  favoritos, recomendaciones, retención D1/D7) y curva horaria de las islas con tracción.
+  favoritos, recomendaciones, retención D1/D7) y curva horaria de las islas con tracción, con
+  cadencia por tier (hot diario, warm cada 5 días, cold cada 7).
 
 Preguntas que busca responder: qué tiene un juego para **explotar** o para **retener**, qué
 **nichos** tienen demanda creciente y poca oferta, y si con los primeros 3–7 días se puede
@@ -19,7 +20,7 @@ Los datos viven en un repo aparte: **[ugc-game-analytics-data](https://github.co
 | Fase | Estado |
 |---|---|
 | 0 — Colector mínimo | ✅ todos los crons activos (2026-11-10) |
-| 1 — Robustez (tiers, calidad, keywords, compactación) | en curso: tiers y búsqueda por keywords de Roblox y checks de calidad listos |
+| 1 — Robustez (tiers, calidad, keywords, compactación) | en curso: tiers de Roblox y Fortnite, búsqueda por keywords y checks de calidad listos; falta compactación |
 | 2 — Enriquecimiento | pendiente |
 | 3 — Análisis | pendiente |
 
@@ -81,11 +82,14 @@ siempre (último visto, última consulta, última actividad) no se guardan: se d
   `is_listed`, `first_traction_at`, tier, `valid_from`.
 - `events` — island_new, island_removed, island_relisted, title_change, tags_change,
   category_change.
+- `tier_history` — changed_at, island_code, from_tier, to_tier, reason.
 
 **Ambas:** `quality` — checked_at, check, status (ok/warn/error/skip), value, unit,
 warn_above, error_above, detail (resultado diario de los checks de calidad).
 
-### Tiers de tracking (Roblox)
+### Tiers de tracking
+
+#### Roblox
 
 Para que el set trackeado pueda crecer sin romper el presupuesto horario de la API, cada
 juego tiene un tier ([`config/tiers.yaml`](config/tiers.yaml), lógica en
@@ -102,6 +106,23 @@ quedaron atrasados por corridas salteadas entran igual. Los juegos de los charts
 siempre. Cada corrida recalcula los tiers con los snapshots/charts recientes (sin estado
 extra) y registra los cambios en `tier_history`. Los juegos que no despegan bajan a warm/cold
 pero se siguen observando (sin sesgo de supervivencia).
+
+#### Fortnite
+
+La API guarda solo 7 días, así que la cadencia define qué se pierde. Cada consulta trae los
+últimos 7 días de la isla, así que el tier sale de su última consulta:
+
+| tier | se consulta | criterio (por defecto) |
+|---|---|---|
+| hot | diario | peak CCU ≥ 50 en los últimos 7 días, peak de los últimos 2 días ≥ 20 y ≥ 2× el de los 4 anteriores, o isla nueva en el catálogo (primeros 3 días) |
+| warm | cada 5 días (2 de solapamiento) | algún día con ≥ 5 jugadores únicos en la ventana, o todavía sin consultar |
+| cold | cada 7 días (justo la ventana) | consultada y sin datos (~80 % del catálogo) |
+
+Warm y cold se reparten por hash del código en slots diarios. Las atrasadas (cadencia + 1 día)
+entran igual, y si la corrida no llega a todo antes del deadline, lo que queda afuera es cold.
+La curva horaria (islas con peak ≥ 50) se pide solo desde la última que ya tenemos, para no
+guardar 7 veces las mismas horas de las islas hot. Medido sobre el primer grupo: ~1 % hot,
+~15 % warm, ~84 % cold → ~46k consultas por día en régimen (antes 57k), con las hot al día.
 
 ### Descubrimiento por keywords (Roblox)
 
@@ -123,10 +144,9 @@ lanzamientos del día.
 [`pipeline/quality.py`](pipeline/quality.py) corre una vez por día y revisa, con umbrales en
 [`config/quality.yaml`](config/quality.yaml):
 
-- **continuidad**: hueco máximo entre corridas horarias de Roblox, juegos atrasados respecto
-  de la cadencia de su tier, antigüedad del último barrido de búsqueda y de la última corrida
-  de Fortnite, islas del grupo del día sin consultar, e islas sin consulta en 6 días (la API
-  ya borró parte de su historia);
+- **continuidad**: hueco máximo entre corridas horarias de Roblox, juegos e islas atrasados
+  respecto de la cadencia de su tier (en Fortnite, pasado el atraso la API ya borró días que
+  no tenemos), antigüedad del último barrido de búsqueda y de la última corrida de Fortnite;
 - **valores imposibles**: negativos, retención fuera de [0, 1], peak CCU > jugadores únicos,
   minutos por jugador mayores que el bucket, visitas que bajan;
 - **duplicados** en snapshots y en el log de dimensiones, nulls y snapshots sin juego en la
@@ -176,9 +196,9 @@ umbrales como `hourly_min_peak_ccu`) en [`config/collectors.yaml`](config/collec
 
 | Workflow | Frecuencia | Qué hace |
 |---|---|---|
-| `roblox_hourly.yml` | cada hora (:17) — **activo** | charts + descubiertos por búsqueda + detalles y votos de los juegos que tocan por tier. Cada run es un loop de ~5,5 h ([`scripts/hourly_loop.sh`](scripts/hourly_loop.sh)) que se relanza solo; el cron (cada 3 h) solo retoma la cadena si se corta, porque el cron de GitHub saltea muchas corridas |
+| `roblox_hourly.yml` | cada hora (:17) — **activo** | charts + descubiertos por búsqueda + detalles y votos de los juegos que tocan por tier. Cada run es un loop de ~5,5 h ([`scripts/hourly_loop.sh`](scripts/hourly_loop.sh)) que se relanza solo; el cron (cada 3 h) solo retoma la cadena si se corta, porque el cron de GitHub saltea muchas corridas. Después de cada corrida lanza los diarios cuyo cron no disparó ([`scripts/dispatch_missed.sh`](scripts/dispatch_missed.sh), 90 min de margen) |
 | `roblox_search.yml` | diario (06:23 UTC) — **activo** | barrido de keywords (~5,5 h, 1 req/min) → `search_positions` |
-| `fortnite_daily.yml` | diario (03:37 UTC) — **activo** | catálogo + métricas del grupo del día (~3 h) |
+| `fortnite_daily.yml` | diario (03:37 UTC) — **activo** | catálogo + métricas de las islas que tocan por tier (~2,5–3,5 h) |
 | `quality_daily.yml` | diario (12:53 UTC) — **activo** | checks de calidad → `quality`; falla si hay errores |
 | `keepalive.yml` | mensual (día 3) — **activo** | re-habilita los workflows vía API (regla de 60 días) |
 

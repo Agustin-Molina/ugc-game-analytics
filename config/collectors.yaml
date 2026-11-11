@@ -15,7 +15,7 @@ run:
 fortnite:
   base_url: "https://api.fortnite.com/ecosystem/v1"
   page_size: 1000         # máximo aceptado por /islands
-  n_groups: 5             # rotación: cada isla se consulta cada 5 días (la API guarda 7)
+  n_groups: 5             # solo para --group N (sin tiers); la cadencia está en config/tiers.yaml
   window_days: 7
   rate_per_s: 6           # medido: 6 req/s sin 429; 8 req/s ya da algunos
   concurrency: 6

@@ -1,5 +1,5 @@
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
@@ -9,6 +9,7 @@ import respx
 
 from collectors import fortnite
 from collectors.common import load_config, read_dimension
+from pipeline import tiers
 
 FIX = Path(__file__).parent / "fixtures"
 BASE = "https://api.fortnite.com/ecosystem/v1"
@@ -246,3 +247,58 @@ async def test_server_errors_count_toward_error_rate(tmp_path, cfg):
                                  dry_run=True)
     assert summary.ops_failed == 1
     assert summary.exit_code(0.2) == 1
+
+
+def recent_day_metrics(peak: int) -> dict:
+    """Métricas `day` con buckets de ayer y anteayer (relativos a hoy)."""
+    today = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+    ts = [fortnite.iso_z(today - timedelta(days=d)) for d in (2, 1)]
+    return {"peakCCU": [{"value": 10, "timestamp": ts[0]}, {"value": peak, "timestamp": ts[1]}],
+            "uniquePlayers": [{"value": 20, "timestamp": ts[0]},
+                              {"value": peak * 3, "timestamp": ts[1]}]}
+
+
+@respx.mock
+async def test_tiered_runs(tmp_path, cfg):
+    rules = tiers.load_rules("fortnite")
+    catalog = [island("AAAA", "hot one"), island("BBBB", "dead"), island("CCCC", "gone")]
+
+    def islands(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"meta": {"page": {"nextCursor": None}},
+                                         "data": catalog})
+
+    respx.get(f"{BASE}/islands").mock(side_effect=islands)
+    day_a = respx.get(f"{BASE}/islands/AAAA/metrics/day").mock(
+        return_value=httpx.Response(200, json=recent_day_metrics(139)))
+    hour_a = respx.get(f"{BASE}/islands/AAAA/metrics/hour").mock(
+        return_value=httpx.Response(200, json=hour_metrics()))
+    day_b = respx.get(f"{BASE}/islands/BBBB/metrics/day").mock(
+        return_value=httpx.Response(200, json=null_metrics()))
+    day_c = respx.get(f"{BASE}/islands/CCCC/metrics/day").mock(
+        return_value=httpx.Response(404, json={"errorCode": "not_found"}))
+    day_d = respx.get(f"{BASE}/islands/DDDD/metrics/day").mock(
+        return_value=httpx.Response(200, json=null_metrics()))
+
+    # 1ª corrida: todo es warm "sin consultar" y con cadencia 1 entra todo
+    rules["cadence"].update(warm_days=1, cold_days=1)
+    summary = await fortnite.run(tmp_path, cfg, tier_rules=rules)
+    assert (day_a.call_count, day_b.call_count, day_c.call_count) == (1, 1, 1)
+    dim = read_dimension(tmp_path, "fortnite", fortnite.GAMES_SCHEMA, "island_code")
+    assert dict(zip(dim["island_code"], dim["tier"], strict=True)) == {
+        "AAAA": "hot", "BBBB": "cold", "CCCC": "cold"}
+    assert any("tiers: hot 1 · warm 0 · cold 2" in n for n in summary.notes)
+
+    # 2ª corrida: llega DDDD; warm/cold sin slot (cadencia enorme) → solo hot + nueva
+    catalog.append(island("DDDD", "brand new"))
+    rules["cadence"].update(warm_days=10**6, cold_days=10**6)
+    await fortnite.run(tmp_path, cfg, tier_rules=rules)
+    assert (day_a.call_count, day_b.call_count, day_c.call_count, day_d.call_count) == \
+        (2, 1, 1, 1)
+    # la curva horaria se pide solo desde la última que ya tenemos
+    first_from, second_from = (c.request.url.params["from"] for c in hour_a.calls)
+    assert second_from > first_from
+
+    hist = pl.read_parquet(tmp_path / "fortnite/tier_history/**/*.parquet")
+    d = hist.filter(pl.col("island_code") == "DDDD").row(0, named=True)
+    assert (d["from_tier"], d["to_tier"], d["reason"]) == ("warm", "hot", "new")
+    assert hist.height == 4  # A, B, C en la 1ª corrida + D en la 2ª

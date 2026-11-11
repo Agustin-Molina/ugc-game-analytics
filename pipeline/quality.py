@@ -8,8 +8,8 @@ Summary de Actions) y se guarda en `<plataforma>/quality/date=YYYY-MM-DD/*.parqu
 la serie histórica. Con algún error el exit code es 1: el workflow falla y GitHub avisa.
 
 Qué mira:
-- continuidad: huecos entre corridas, última corrida, juegos atrasados respecto de su tier,
-  islas del grupo del día sin consultar, islas que no se consultan hace 6 días (data perdida);
+- continuidad: huecos entre corridas, última corrida, juegos e islas atrasados respecto de
+  la cadencia de su tier (en Fortnite, pasado el atraso la API ya borró días que no tenemos);
 - valores imposibles: negativos, retención fuera de [0, 1], peak CCU > jugadores únicos,
   minutos por jugador mayores que el bucket, visitas que bajan;
 - duplicados en hechos y en el log de dimensiones; nulls; snapshots sin juego en la dimensión.
@@ -36,9 +36,7 @@ from collectors.common import (
     ROOT,
     TS,
     frame,
-    group_of,
     iso_z,
-    load_config,
     new_run_id,
     resolve_data_dir,
     setup_logging,
@@ -260,8 +258,8 @@ def check_roblox(con: duckdb.DuckDBPyConnection, now: datetime, rules: dict[str,
 # --------------------------------------------------------------------------- Fortnite
 
 
-def check_fortnite(con: duckdb.DuckDBPyConnection, now: datetime, rules: dict[str, Any],
-                   n_groups: int) -> list[Check]:
+def check_fortnite(con: duckdb.DuckDBPyConnection, now: datetime, rules: dict[str, Any]
+                   ) -> list[Check]:
     r = rules["fortnite"]
     if not _has(con, "fortnite_fetch_log") or not _has(con, "fortnite_games"):
         return [Check("datos", ERROR, detail="no hay fetch_log o dimensión de Fortnite")]
@@ -289,37 +287,30 @@ def check_fortnite(con: duckdb.DuckDBPyConnection, now: datetime, rules: dict[st
     checks.append(grade("fetch_error_share", errors / fetched.height, r["fetch_error_share"],
                         "%", " · ".join(f"{k} {v}" for k, v in sorted(status.items()))))
 
-    # ¿se consultó todo el grupo de la última corrida?
-    codes = set(fetched["island_code"].to_list())
-    groups = Counter(group_of(c, n_groups) for c in codes)
-    group = groups.most_common(1)[0][0]
-    listed = _pl(con, "select island_code from fortnite_games where is_listed")
-    expected = {c for c in listed["island_code"].to_list() if group_of(c, n_groups) == group}
-    missing = len(expected - codes)
-    checks.append(grade("group_missing_share", missing / len(expected) if expected else 0.0,
-                        r["group_missing_share"], "%",
-                        f"grupo {group}: {missing} de {len(expected)} islas listadas "
-                        "sin consultar"))
-
-    # islas que no se consultan hace `coverage_days`: la API ya borró parte de su historia
-    days = int(r["coverage_days"])
-    cutoff = now - timedelta(days=days)
+    # islas atrasadas respecto de la cadencia de su tier (hot 1 día, warm 5, cold 7): pasado
+    # `overdue_days` sin consulta, la API ya borró días que no tenemos
     first = _ts(con, "select min(snapshot_at) from fortnite_fetch_log", [])
-    if not first or first[0] is None or first[0] > cutoff:
-        span = _hours(now - first[0]) / 24 if first and first[0] else 0
-        checks.append(Check("uncovered_share", SKIP,
-                            detail=f"historia de {span:.1f} días; necesita {days}"))
-    else:
-        n_old, uncovered = con.execute(f"""
+    span = _hours(now - first[0]) / 24 if first and first[0] else 0.0
+    for tier, days in r["overdue_days"].items():
+        days = float(days)
+        if span < days:
+            checks.append(Check(f"overdue_{tier}", SKIP,
+                                detail=f"historia de {span:.1f} días; necesita {days:g}"))
+            continue
+        cutoff = now - timedelta(days=days)
+        n, late = con.execute(f"""
             with seen as (select distinct island_code from fortnite_fetch_log
-                          where {WINDOW} and interval = 'day')
+                          where {WINDOW} and interval = 'day' and status != 'error')
             select count(*), count(*) filter (where s.island_code is null)
             from fortnite_games g left join seen s using (island_code)
-            where g.is_listed and g.first_seen_at < to_timestamp(?)
-        """, [*_since(cutoff), cutoff.timestamp()]).fetchall()[0]
-        checks.append(grade("uncovered_share", uncovered / n_old if n_old else 0.0,
-                            r["uncovered_share"], "%",
-                            f"{uncovered} de {n_old} islas sin consulta en {days} días"))
+            where g.is_listed and coalesce(g.tier, 'warm') = ?
+              and g.first_seen_at < to_timestamp(?)
+        """, [*_since(cutoff), tier, cutoff.timestamp()]).fetchall()[0]
+        if n == 0:
+            checks.append(Check(f"overdue_{tier}", SKIP, detail="sin islas en este tier"))
+        else:
+            checks.append(grade(f"overdue_{tier}", late / n, r["overdue_share"], "%",
+                                f"{late}/{n} sin consulta en {days:g} días"))
 
     # valores
     if _has(con, "fortnite_snapshots"):
@@ -382,13 +373,12 @@ def run(data_dir: Path, platforms: tuple[str, ...] = PLATFORMS, now: datetime | 
     now = now or utcnow()
     rules = rules or load_rules()
     con = connect(data_dir)
-    n_groups = int(load_config()["fortnite"]["n_groups"])
     results: dict[str, list[Check]] = {}
     for platform in platforms:
         if platform == "roblox":
             results[platform] = check_roblox(con, now, rules)
         else:
-            results[platform] = check_fortnite(con, now, rules, n_groups)
+            results[platform] = check_fortnite(con, now, rules)
     if write:
         run_id = new_run_id()
         for platform, checks in results.items():

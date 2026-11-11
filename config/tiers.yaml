@@ -34,3 +34,23 @@ roblox:
     cold_slots: 168        # cold: 1 de cada 168 corridas (semanal)
     overdue_factor: 1.5    # si pasó 1,5× su período sin observarse (corridas salteadas), entra igual
     max_overdue_per_run: 2000
+
+fortnite:
+  # Historia que se lee para decidir: cada consulta trae los últimos 7 días, así que con la
+  # última consulta de cada isla alcanza; 10 días cubre a las cold (cada 7) con margen.
+  window_days: 10
+
+  hot:                     # se consulta todos los días; basta con UNA señal
+    min_peak_ccu: 50       # peak CCU diario >= 50 en los últimos 7 días
+    growth_min_peak: 20    # crecimiento: peak de los últimos 2 días >= 20 ...
+    growth_ratio: 2.0      # ... y >= 2× el de los 4 días anteriores (o sin datos antes)
+    new_days: 3            # isla nueva en el catálogo: diaria durante sus primeros 3 días
+
+  # warm: con algún dato en la ventana (>= 5 jugadores únicos algún día), o todavía sin
+  # consultar. cold: consultada y sin datos (~80 % del catálogo).
+
+  cadence:
+    warm_days: 5           # cada 5 días (la API guarda 7 → 2 días de solapamiento)
+    cold_days: 7           # cada 7 días (justo la ventana de la API, sin solapamiento)
+    overdue_slack_days: 1  # si pasó cadencia + 1 día sin consulta (corrida salteada), entra
+    max_overdue_per_run: 20000

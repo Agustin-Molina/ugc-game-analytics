@@ -7,7 +7,9 @@
 # de un job no.
 #
 # Uso: scripts/hourly_loop.sh <dir_datos> <minuto> <presupuesto_min> [args del colector]
-# Env opcionales (pruebas): LOOP_MARGIN_MIN (25), COLLECT_CMD, COMMIT_CMD.
+# Después de cada corrida lanza los workflows diarios cuyo cron no disparó
+# (scripts/dispatch_missed.sh).
+# Env opcionales (pruebas): LOOP_MARGIN_MIN (25), COLLECT_CMD, COMMIT_CMD, DISPATCH_CMD.
 # Exit code 1 si alguna corrida falló (el job queda en rojo, pero el encadenado sigue).
 set -uo pipefail
 
@@ -18,6 +20,7 @@ shift 3
 margin_min="${LOOP_MARGIN_MIN:-25}"  # tiempo reservado para la última corrida + commit
 collect_cmd="${COLLECT_CMD:-uv run --no-dev python -m collectors.roblox}"
 commit_cmd="${COMMIT_CMD:-bash scripts/commit_data.sh}"
+dispatch_cmd="${DISPATCH_CMD:-bash scripts/dispatch_missed.sh}"
 
 deadline=$(( $(date +%s) + budget_min * 60 ))
 runs=0
@@ -58,6 +61,8 @@ while true; do
   fi
   # shellcheck disable=SC2086
   $commit_cmd "$data_dir" roblox || failed=$(( failed + 1 ))
+  # shellcheck disable=SC2086
+  $dispatch_cmd || echo "::warning::no pude revisar los workflows diarios"
   runs=$(( runs + 1 ))
   echo "::endgroup::"
 done
