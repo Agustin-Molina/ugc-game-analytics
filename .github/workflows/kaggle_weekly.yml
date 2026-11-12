@@ -122,8 +122,8 @@ jobs:
           # Verificación: cuántas columnas quedaron con descripción en Kaggle.
           mkdir -p after
           if kaggle datasets metadata "${dataset_id}" -p after; then
-            jq -c '(.info // .).data[0] | {name, description, columns: (.columns // [])[:3]}' \
-              after/dataset-metadata.json || true
+            jq -c '(.info // .) | del(.description) | (.data // .resources // [])
+              |= .[:1]' after/dataset-metadata.json | cut -c1-1500 || true
             described="$(jq '[(.info // .).data[]?.columns[]? | select((.description // "") != "")]
               | length' after/dataset-metadata.json || echo '?')"
             total="$(jq '[(.info // .).data[]?.columns[]?] | length' after/dataset-metadata.json || echo '?')"
