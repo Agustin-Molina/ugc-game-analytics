@@ -1,5 +1,7 @@
 # UGC Game Analytics — Roblox & Fortnite
 
+[![tests](https://github.com/Agustin-Molina/ugc-game-analytics/actions/workflows/tests.yml/badge.svg)](https://github.com/Agustin-Molina/ugc-game-analytics/actions/workflows/tests.yml)
+
 Dos datasets vivos, recolectados automáticamente con GitHub Actions:
 
 - **Roblox experiences**: snapshots de CCU, visitas, favoritos y votos de todo lo que aparece
@@ -22,7 +24,7 @@ Los datos viven en un repo aparte: **[ugc-game-analytics-data](https://github.co
 | 0 — Colector mínimo | ✅ todos los crons activos (2026-11-10) |
 | 1 — Robustez (tiers, calidad, keywords, compactación) | ✅ completa (2026-11-11) |
 | 2 — Enriquecimiento | en curso: ícono, miniaturas, gamepasses, géneros unificados, features de título, historial del creador, clones y métricas derivadas listos; falta mudar el almacenamiento (~500 MB) |
-| 3 — Análisis | en curso: notebook de EDA y score de oportunidad por nicho (Fortnite, preliminar hasta tener 2 semanas) |
+| 3 — Análisis | en curso: notebook de EDA y score de oportunidad por nicho en las dos plataformas (preliminar hasta tener 2 semanas) |
 
 ## Fuentes
 
@@ -227,11 +229,15 @@ cold se miran una vez por semana: su serie diaria tiene huecos.
 ### Score de oportunidad por nicho (Fase 3, preliminar)
 
 [`pipeline/opportunity.py`](pipeline/opportunity.py) cruza demanda y competencia por género
-unificado. Por ahora Fortnite, que tiene historia diaria completa:
+unificado, en las dos plataformas. Cada una mide la demanda distinto, así que los scores no se
+comparan entre plataformas:
 
 ```bash
-uv run python -m pipeline.opportunity
+uv run python -m pipeline.opportunity                     # las dos tablas
+uv run python -m pipeline.opportunity --platform roblox
 ```
+
+**Fortnite** (`fortnite_niche_opportunity`):
 
 - **Demanda** de cada isla: jugadores únicos sumados en la última semana cubierta por sus
   consultas (semana completa: los fines de semana tienen el doble de jugadores, así que
@@ -242,6 +248,23 @@ uv run python -m pipeline.opportunity
 - **Score** = jugadores-día ganados en la semana / islas activas (la definición de este
   proyecto). Necesita 14 días de cobertura; hasta entonces la tabla se ordena por la mediana.
 - Sin las islas de Epic, que no compiten con los creadores.
+
+**Roblox** (`roblox_niche_opportunity`):
+
+- **Demanda** de cada juego: **visitas ganadas** en la última semana. El CCU no sirve porque
+  depende de la hora en que se muestrea, y un juego cold tiene una foto por semana. `visits`
+  es un contador acumulado: entre dos snapshots la diferencia se reparte en forma lineal y se
+  suma la parte que cae en la semana, sin importar la frecuencia de muestreo. Con menos de 7
+  días cubiertos (mínimo 18 h) se extrapola a la semana; para un juego nuevo, los días
+  previos a su creación cuentan como cubiertos (0 visitas).
+- **Por nicho**: las mismas columnas que Fortnite, más dos señales de entrada que Fortnite no
+  tiene, porque no expone la fecha de creación: `new_games_30d` (juegos creados en los
+  últimos 30 días) y `new_games_visits_share` (qué parte de las visitas se llevan). Un nicho
+  donde los juegos nuevos se llevan una parte grande todavía le deja lugar a uno más.
+- **Crecimiento y score**: solo con dos semanas completas entre snapshots reales (desde
+  ~2026-11-24 para los juegos hot).
+- **Sesgo**: solo están los juegos vistos en charts o búsquedas, así que la competencia chica
+  está subcontada. Sirve para comparar nichos entre sí, no como censo.
 
 ### Leer con DuckDB
 
@@ -331,6 +354,7 @@ cd notebooks && uv run --group notebook jupyter nbconvert --to notebook --execut
 | `quality_daily.yml` | diario (12:53 UTC) — **activo** | checks de calidad → `quality`; falla si hay errores |
 | `compact_weekly.yml` | domingos (02:47 UTC) | junta los Parquet de cada partición de hace ≥ 2 días en uno ([`pipeline/compact.py`](pipeline/compact.py)); mismo contenido |
 | `keepalive.yml` | mensual (día 3) — **activo** | re-habilita los workflows vía API (regla de 60 días) |
+| `tests.yml` | en cada push y pull request | `ruff check` + `pytest` (sin red) |
 
 Los workflows hacen checkout del repo de datos en `./data` con una deploy key
 (`DATA_REPO_DEPLOY_KEY`) y commitean ahí. Todos se pueden correr a mano con

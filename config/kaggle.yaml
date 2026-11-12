@@ -118,6 +118,13 @@ tables:
     description: >-
       Demand vs. competition per unified genre (excluding Epic's own islands). Preliminary
       until two weeks of coverage exist.
+  roblox_niche_opportunity:
+    view: roblox_niche_opportunity
+    description: >-
+      Demand (weekly visits, interpolated between snapshots) vs. competition per unified
+      genre, plus how much of it new games take. Only games seen in charts or searches are
+      tracked, so small competitors are undercounted. Preliminary until two weeks of
+      coverage exist.
   title_clones:
     view: title_clones
     description: >-
@@ -280,5 +287,17 @@ columns:
   demand_growth: Week-over-week demand growth (islands with two covered weeks).
   demand_per_active_island: demand_w1 / islands_active.
   median_island_demand: Median weekly demand of active islands (the typical island).
-  top10_share: Share of the demand taken by the top 10 islands.
-  opportunity_score: Player-days gained in the week / active islands.
+  top10_share: Share of the genre's demand taken by its 10 biggest games / islands.
+  opportunity_score: >-
+    Week-over-week demand gained / active competitors (unique players per island on Fortnite,
+    visits per game on Roblox; not comparable across platforms).
+  games_tracked: Tracked Roblox games in the genre.
+  games_active: Games with visits in their last covered week.
+  visits_w1: >-
+    Visits gained in the last 7 days (summed over games), interpolated between snapshots;
+    extrapolated to a week when less was covered.
+  visits_growth: Week-over-week visits growth (games with two fully covered weeks).
+  visits_per_active_game: visits_w1 / games_active.
+  median_game_visits: Median weekly visits of active games (the typical game).
+  new_games_30d: Games in the genre created in the last 30 days.
+  new_games_visits_share: Share of the genre's weekly visits taken by games created in the last 30 days.

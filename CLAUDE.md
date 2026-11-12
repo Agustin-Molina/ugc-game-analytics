@@ -95,7 +95,9 @@ También es un proyecto de portfolio de data: código limpio, README claro, data
 
 ### Fase 3 — Análisis (desde mes 2)
 - [x] Notebook de EDA (`notebooks/eda.ipynb`, lee el export de Kaggle; se profundiza con más semanas).
-- [ ] Score de oportunidad por nicho = crecimiento de demanda / cantidad de juegos compitiendo.
+- [x] Score de oportunidad por nicho = crecimiento de demanda / cantidad de juegos compitiendo
+      (`pipeline/opportunity.py`, Fortnite por jugadores únicos y Roblox por visitas; el
+      crecimiento se completa solo con 2 semanas de datos: Fortnite ~17/11, Roblox ~24/11).
 - [ ] Definir éxito: "explosión" (peak CCU >= X en 14 días desde first_traction) y
       "sostenido" (CCU día 30–60 >= 30% del peak). Umbrales por plataforma.
 - [ ] Modelo de detección temprana (necesita ~6–8 semanas de lanzamientos observados).

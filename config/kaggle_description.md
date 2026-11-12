@@ -20,7 +20,7 @@ It was built to answer three questions: what makes a game grow fast (explosion) 
 **Derived tables** (recomputed on every version):
 - `*_daily` and `*_metrics`: daily series and curve metrics per game: days to peak, growth slopes over days 0–6 and 0–13 from first traction, half-life of the decline, sustained ratio (days 30–60 / peak), engagement and retention.
 - `title_clones`: title-clone families across both platforms (e.g. every "Steal a Brainrot" copy).
-- `fortnite_niche_opportunity`: weekly demand vs. number of competing islands per genre.
+- `fortnite_niche_opportunity` / `roblox_niche_opportunity`: weekly demand vs. number of competing games per genre (unique players on Fortnite, visits on Roblox), and on Roblox how much of it goes to games launched in the last 30 days.
 - Features in the games tables: a unified Roblox/Fortnite genre (25 genres), title features (emojis, bracket tags like `[UPD]`, caps, keywords) and the creator's track record.
 
 ## Caveats
