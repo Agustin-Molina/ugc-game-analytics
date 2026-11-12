@@ -119,22 +119,15 @@ jobs:
           fi
           kaggle datasets metadata --update -p export "${dataset_id}" \
             || echo "::warning::no se pudo actualizar la metadata (la versión sí se publicó)"
-          # Verificación: cuántas columnas quedaron con descripción en Kaggle.
-          mkdir -p after
-          if kaggle datasets metadata "${dataset_id}" -p after; then
-            jq -c 'keys' after/dataset-metadata.json || true
-            jq -c '(.info // .) | del(.description) | tostring | .[0:1500]' \
-              after/dataset-metadata.json || true
-            described="$(jq '[(.info // .).data[]?.columns[]? | select((.description // "") != "")]
-              | length' after/dataset-metadata.json || echo '?')"
-            total="$(jq '[(.info // .).data[]?.columns[]?] | length' after/dataset-metadata.json || echo '?')"
-            echo "columnas con descripción en Kaggle: ${described}/${total}"
-          fi
+          # Verificación: cuántos archivos y columnas quedaron con descripción en Kaggle.
+          check="$(uvx --from kaggle==2.2.5 --with six==1.17.0 python scripts/kaggle_check.py \
+            "${dataset_id}" || echo 'no se pudo verificar')"
+          echo "descripciones en Kaggle: ${check}"
           {
             echo "## Kaggle"
             echo ""
             echo "- archivos: $(ls export/*.parquet | wc -l) · $(du -sh export | cut -f1)"
             echo "- modo: $([ "${METADATA_ONLY}" = "true" ] && echo 'solo ficha' || { [ "${CREATE}" = "true" ] && echo 'creación (privado)' || echo 'versión nueva'; })"
             echo "- privado: $(jq -r .isPrivate export/dataset-metadata.json)"
-            echo "- columnas con descripción: ${described:-?}/${total:-?}"
+            echo "- descripciones en Kaggle: ${check}"
           } >> "${GITHUB_STEP_SUMMARY}"

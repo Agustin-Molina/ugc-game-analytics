@@ -28,10 +28,12 @@ KAGGLE_PATH = ROOT / "config" / "kaggle.yaml"
 DESCRIPTION_PATH = ROOT / "config" / "kaggle_description.md"
 log = logging.getLogger("pipeline.export")
 
+# Tipos de columna de Kaggle (string | numeric | boolean | datetime). `metadata --update` los
+# pasa tal cual al servidor, que descarta las columnas con tipos que no conoce ("integer").
 _TYPES = {
-    "BIGINT": "integer", "INTEGER": "integer", "HUGEINT": "integer", "SMALLINT": "integer",
-    "TINYINT": "integer", "UBIGINT": "integer", "UINTEGER": "integer",
-    "DOUBLE": "number", "FLOAT": "number",
+    "BIGINT": "numeric", "INTEGER": "numeric", "HUGEINT": "numeric", "SMALLINT": "numeric",
+    "TINYINT": "numeric", "UBIGINT": "numeric", "UINTEGER": "numeric",
+    "DOUBLE": "numeric", "FLOAT": "numeric",
     "BOOLEAN": "boolean",
     "DATE": "datetime", "TIMESTAMP": "datetime", "TIMESTAMP WITH TIME ZONE": "datetime",
 }
@@ -39,7 +41,7 @@ _TYPES = {
 
 def kaggle_type(duck_type: str) -> str:
     if duck_type.startswith("DECIMAL"):
-        return "number"
+        return "numeric"
     return _TYPES.get(duck_type, "string")
 
 

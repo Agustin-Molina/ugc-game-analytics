@@ -54,8 +54,8 @@ def test_export_files_and_metadata(con, tmp_path):
     fields = res_by_path["roblox_snapshots_2026-11.parquet"]["schema"]["fields"]
     assert [f["name"] for f in fields] == snap.columns
     types = {f["name"]: f["type"] for f in fields}
-    assert types == {"snapshot_at": "datetime", "universe_id": "integer",
-                     "playing": "integer"}
+    assert types == {"snapshot_at": "datetime", "universe_id": "numeric",
+                     "playing": "numeric"}
     assert all(f["description"] for f in fields)
     assert res_by_path["roblox_snapshots_2026-11.parquet"]["description"].endswith(
         "Month 2026-11.")
@@ -71,6 +71,7 @@ def test_spec_is_consistent():
 
 
 def test_kaggle_types():
-    assert export.kaggle_type("DECIMAL(18,3)") == "number"
+    assert export.kaggle_type("DECIMAL(18,3)") == "numeric"
+    assert export.kaggle_type("BIGINT") == "numeric"
     assert export.kaggle_type("VARCHAR[]") == "string"
     assert export.kaggle_type("TIMESTAMP WITH TIME ZONE") == "datetime"
