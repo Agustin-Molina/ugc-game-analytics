@@ -124,4 +124,5 @@ jobs:
             echo ""
             echo "- archivos: $(ls export/*.parquet | wc -l) · $(du -sh export | cut -f1)"
             echo "- modo: $([ "${METADATA_ONLY}" = "true" ] && echo 'solo ficha' || { [ "${CREATE}" = "true" ] && echo 'creación (privado)' || echo 'versión nueva'; })"
-            echo "- privado: $(jq -r .isPrivate export/dataset-metadata.json)"          } >> "${GITHUB_STEP_SUMMARY}"
+            echo "- privado: $(jq -r .isPrivate export/dataset-metadata.json)"
+          } >> "${GITHUB_STEP_SUMMARY}"
