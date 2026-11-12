@@ -108,6 +108,15 @@ jobs:
           # ni portada: van por metadata --update. La ficha sale de config/kaggle.yaml (incluida
           # la visibilidad, `private`): lo que se edite a mano en la web se pisa acá.
           dataset_id="$(jq -r .id export/dataset-metadata.json)"
+          # El endpoint de update no acepta el nombre de licencia de `create` ("invalid
+          # license"): se reusa la licencia tal como la guarda Kaggle.
+          mkdir -p current
+          if kaggle datasets metadata "${dataset_id}" -p current; then
+            lic="$(jq -c '(.info // .).licenses' current/dataset-metadata.json)"
+            echo "licencia en Kaggle: ${lic}"
+            jq --argjson lic "${lic}" '.licenses = $lic' export/dataset-metadata.json \
+              > current/merged.json && mv current/merged.json export/dataset-metadata.json
+          fi
           kaggle datasets metadata --update -p export "${dataset_id}" \
             || echo "::warning::no se pudo actualizar la metadata (la versión sí se publicó)"
           {
