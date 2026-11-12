@@ -13,6 +13,10 @@ on:
         description: "Primera publicación: crea el dataset (privado; se hace público en la web)"
         type: boolean
         default: false
+      metadata_only:
+        description: "Solo actualizar la ficha (textos, columnas, portada, visibilidad), sin versión nueva"
+        type: boolean
+        default: false
   # Activado el 2026-11-12 tras revisar la primera publicación. Lunes 04:29 UTC. Si el cron
   # no dispara, lo lanza el loop horario de Roblox (scripts/dispatch_missed.sh).
   schedule:
@@ -89,16 +93,20 @@ jobs:
         env:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
           CREATE: ${{ inputs.create }}
+          METADATA_ONLY: ${{ inputs.metadata_only }}
         run: |
           # kaggle 2.2.5 no declara su dependencia de six
           kaggle() { uvx --from kaggle==2.2.5 --with six==1.17.0 kaggle "$@"; }
-          if [ "${CREATE}" = "true" ]; then
+          if [ "${METADATA_ONLY}" = "true" ]; then
+            echo "solo ficha: sin versión nueva"
+          elif [ "${CREATE}" = "true" ]; then
             kaggle datasets create -p export -r skip -t
           else
             kaggle datasets version -p export -r skip -t -m "Weekly update $(date -u +%F)"
           fi
-          # create/version no aplican frecuencia ni fuentes: van por metadata --update. La
-          # ficha sale de config/kaggle.yaml: lo que se edite a mano en la web se pisa acá.
+          # create/version no aplican frecuencia, fuentes, descripciones de archivos/columnas
+          # ni portada: van por metadata --update. La ficha sale de config/kaggle.yaml (incluida
+          # la visibilidad, `private`): lo que se edite a mano en la web se pisa acá.
           dataset_id="$(jq -r .id export/dataset-metadata.json)"
           kaggle datasets metadata --update -p export "${dataset_id}" \
             || echo "::warning::no se pudo actualizar la metadata (la versión sí se publicó)"
@@ -106,5 +114,6 @@ jobs:
             echo "## Kaggle"
             echo ""
             echo "- archivos: $(ls export/*.parquet | wc -l) · $(du -sh export | cut -f1)"
-            echo "- modo: $([ "${CREATE}" = "true" ] && echo 'creación (privado)' || echo 'versión nueva')"
+            echo "- modo: $([ "${METADATA_ONLY}" = "true" ] && echo 'solo ficha' || { [ "${CREATE}" = "true" ] && echo 'creación (privado)' || echo 'versión nueva'; })"
+            echo "- privado: $(jq -r .isPrivate export/dataset-metadata.json)"
           } >> "${GITHUB_STEP_SUMMARY}"

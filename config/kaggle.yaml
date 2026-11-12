@@ -9,6 +9,11 @@ dataset:
   license: CC-BY-NC-4.0
   keywords: [games, video games, time series analysis, data analytics]   # tienen que existir en Kaggle
   expected_update_frequency: weekly
+  # `metadata --update` aplica la visibilidad en cada corrida (si falta, lo hace PÚBLICO):
+  # cambiar acá, no en la web, o el lunes se revierte.
+  private: true
+  # Portada (560×280, se recorta tal cual): scripts/kaggle_cover.py la genera.
+  cover_image: config/kaggle_cover.png
   # "Provenance" en Kaggle (se aplica con `kaggle datasets metadata --update`)
   sources: >-
     Roblox public web APIs (games.roblox.com, apis.roblox.com explore and omni-search,

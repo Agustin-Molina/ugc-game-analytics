@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -116,11 +117,17 @@ def export(con: duckdb.DuckDBPyConnection, out: Path, owner: str,
                               "schema": {"fields": fields}})
 
     ds = spec["dataset"]
+    # El CLI de Kaggle sube como portada un dataset-cover-image.* junto a la metadata.
+    cover = out / "dataset-cover-image.png"
+    cover.unlink(missing_ok=True)
+    if ds.get("cover_image") and (ROOT / ds["cover_image"]).exists():
+        shutil.copyfile(ROOT / ds["cover_image"], cover)
     meta = {
         "title": ds["title"],
         "subtitle": ds["subtitle"],
         "description": DESCRIPTION_PATH.read_text(encoding="utf-8"),
         "id": f"{owner}/{ds['slug']}",
+        "isPrivate": bool(ds["private"]),
         "licenses": [{"name": ds["license"]}],
         "keywords": ds["keywords"],
         "expectedUpdateFrequency": ds["expected_update_frequency"],

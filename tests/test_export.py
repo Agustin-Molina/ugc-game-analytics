@@ -46,6 +46,9 @@ def test_export_files_and_metadata(con, tmp_path):
     assert meta["description"].startswith("Live tracker")
     assert meta["expectedUpdateFrequency"] == "weekly"
     assert "api.fortnite.com" in meta["userSpecifiedSources"]
+    # sin isPrivate, `kaggle datasets metadata --update` hace público el dataset
+    assert meta["isPrivate"] is export.load_spec()["dataset"]["private"]
+    assert (out / "dataset-cover-image.png").read_bytes()[:4] == b"\x89PNG"
     res_by_path = {r["path"]: r for r in meta["resources"]}
     assert set(res_by_path) == {f for f, _ in res.files}
     fields = res_by_path["roblox_snapshots_2026-11.parquet"]["schema"]["fields"]

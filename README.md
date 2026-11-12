@@ -273,6 +273,16 @@ El workflow `kaggle_weekly.yml` exporta y sube una versión nueva (`workflow_dis
 `create` para la primera publicación, que queda privada). Necesita los secrets
 `KAGGLE_USERNAME` y `KAGGLE_API_TOKEN`. Licencia: CC BY-NC 4.0.
 
+Después de cada versión, `kaggle datasets metadata --update` aplica la ficha completa:
+descripciones de archivos y columnas, fuentes, frecuencia, portada y **visibilidad**
+(`private` en `config/kaggle.yaml`). Todo sale del repo, así que lo que se edite a mano en la
+web se pisa el lunes siguiente. Con `workflow_dispatch` + `metadata_only` se actualiza solo
+la ficha, sin versión nueva. La portada (`config/kaggle_cover.png`, 560×280) se regenera con:
+
+```bash
+uv run --with matplotlib python scripts/kaggle_cover.py --data-dir ../ugc-game-analytics-data
+```
+
 ## Correr localmente
 
 Requiere [uv](https://docs.astral.sh/uv/).
