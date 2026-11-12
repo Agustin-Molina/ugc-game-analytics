@@ -304,7 +304,7 @@ umbrales como `hourly_min_peak_ccu`) en [`config/collectors.yaml`](config/collec
 | `roblox_search.yml` | diario (06:23 UTC) — **activo** | barrido de keywords (~5,5 h, 1 req/min) → `search_positions` |
 | `roblox_assets.yml` | diario (08:11 UTC) — **activo** | ícono, miniaturas y gamepasses (hot/warm diario, cold semanal; ~8 min) → `media`, `gamepasses`, `asset_checks`, `events` |
 | `roblox_creators.yml` | diario (09:41 UTC) — **activo** | historial de creadores: nuevos primero, después cada uno 1 vez por semana (70 min de presupuesto) → `creator_games`, `creator_checks` |
-| `kaggle_weekly.yml` | semanal (sin activar) | exporta y publica una versión nueva del dataset en Kaggle |
+| `kaggle_weekly.yml` | semanal (lunes 04:29 UTC) — **activo** | exporta y publica una versión nueva del dataset en Kaggle |
 | `fortnite_daily.yml` | diario (03:37 UTC) — **activo** | catálogo + métricas de las islas que tocan por tier (~2,5–3,5 h) |
 | `quality_daily.yml` | diario (12:53 UTC) — **activo** | checks de calidad → `quality`; falla si hay errores |
 | `compact_weekly.yml` | domingos (02:47 UTC) | junta los Parquet de cada partición de hace ≥ 2 días en uno ([`pipeline/compact.py`](pipeline/compact.py)); mismo contenido |

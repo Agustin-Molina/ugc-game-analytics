@@ -13,9 +13,10 @@ on:
         description: "Primera publicación: crea el dataset (privado; se hace público en la web)"
         type: boolean
         default: false
-  # Sin activar: primero una publicación manual revisada (CLAUDE.md).
-  # schedule:
-  #   - cron: "29 4 * * 1"
+  # Activado el 2026-11-12 tras revisar la primera publicación. Lunes 04:29 UTC. Si el cron
+  # no dispara, lo lanza el loop horario de Roblox (scripts/dispatch_missed.sh).
+  schedule:
+    - cron: "29 4 * * 1"
 
 permissions:
   contents: read
@@ -25,7 +26,27 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Si el cron llega tarde y hoy ya corrió (lo lanzó dispatch_missed.sh), no repetir.
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      skip: ${{ steps.guard.outputs.skip }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: scripts
+      - id: guard
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ran_today.sh
+
   publish:
+    needs: guard
+    if: needs.guard.outputs.skip != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -76,6 +97,11 @@ jobs:
           else
             kaggle datasets version -p export -r skip -t -m "Weekly update $(date -u +%F)"
           fi
+          # create/version no aplican frecuencia ni fuentes: van por metadata --update. La
+          # ficha sale de config/kaggle.yaml: lo que se edite a mano en la web se pisa acá.
+          dataset_id="$(jq -r .id export/dataset-metadata.json)"
+          kaggle datasets metadata --update -p export "${dataset_id}" \
+            || echo "::warning::no se pudo actualizar la metadata (la versión sí se publicó)"
           {
             echo "## Kaggle"
             echo ""

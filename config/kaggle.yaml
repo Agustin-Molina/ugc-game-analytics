@@ -9,6 +9,13 @@ dataset:
   license: CC-BY-NC-4.0
   keywords: [games, video games, time series analysis, data analytics]   # tienen que existir en Kaggle
   expected_update_frequency: weekly
+  # "Provenance" en Kaggle (se aplica con `kaggle datasets metadata --update`)
+  sources: >-
+    Roblox public web APIs (games.roblox.com, apis.roblox.com explore and omni-search,
+    thumbnails.roblox.com, game-passes) and the official Fortnite Data API
+    (api.fortnite.com/ecosystem/v1), collected with GitHub Actions: Roblox hot games every
+    hour, Fortnite islands daily to weekly by tier. Code and methodology:
+    https://github.com/Agustin-Molina/ugc-game-analytics
 
 # Tablas exportadas: archivo → vista DuckDB (pipeline.db.connect). `split_by`: columna de
 # fecha para partir en un archivo por mes (<archivo>_YYYY-MM.parquet). `exclude`: columnas

@@ -44,6 +44,8 @@ def test_export_files_and_metadata(con, tmp_path):
     assert 6 <= len(meta["title"]) <= 50 and 20 <= len(meta["subtitle"]) <= 80
     assert meta["licenses"] == [{"name": "CC-BY-NC-4.0"}]
     assert meta["description"].startswith("Live tracker")
+    assert meta["expectedUpdateFrequency"] == "weekly"
+    assert "api.fortnite.com" in meta["userSpecifiedSources"]
     res_by_path = {r["path"]: r for r in meta["resources"]}
     assert set(res_by_path) == {f for f, _ in res.files}
     fields = res_by_path["roblox_snapshots_2026-11.parquet"]["schema"]["fields"]

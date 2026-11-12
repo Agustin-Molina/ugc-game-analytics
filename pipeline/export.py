@@ -124,6 +124,7 @@ def export(con: duckdb.DuckDBPyConnection, out: Path, owner: str,
         "licenses": [{"name": ds["license"]}],
         "keywords": ds["keywords"],
         "expectedUpdateFrequency": ds["expected_update_frequency"],
+        "userSpecifiedSources": " ".join(ds["sources"].split()),
         "resources": resources,
     }
     (out / "dataset-metadata.json").write_text(

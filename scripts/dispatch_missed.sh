@@ -44,4 +44,5 @@ roblox_assets.yml 08:11
 roblox_creators.yml 09:41
 quality_daily.yml 12:53
 compact_weekly.yml 02:47 0
+kaggle_weekly.yml 04:29 1
 EOF
