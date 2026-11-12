@@ -11,6 +11,7 @@ Vistas creadas (solo las de tablas que ya tienen archivos):
 - `roblox_media`, `roblox_gamepasses` (+ `_history`): ícono/miniaturas y gamepasses, mismo
                                  esquema de log de cambios
 - `<plataforma>_<tabla>`         tablas de hechos (snapshots, events, …) con columna `date`
+- `roblox_creator_games_latest`  último listado de juegos de cada creador
 - `fortnite_snapshots_latest`    snapshots de Fortnite sin duplicados de solapamiento
                                  (la fila con `snapshot_at` más reciente por bucket)
 - `<plataforma>_game_features`   género unificado (config/genres.yaml) + features de título
@@ -45,7 +46,7 @@ CHANGE_LOGS = {
 FACT_TABLES = {
     "roblox": ["snapshots", "chart_positions", "search_positions", "events", "tier_history",
                "asset_checks", "creator_games", "creator_checks", "quality"],
-    "fortnite": ["snapshots", "fetch_log", "events", "quality"],
+    "fortnite": ["snapshots", "fetch_log", "events", "tier_history", "quality"],
 }
 
 
@@ -91,6 +92,12 @@ def connect(
                     f"create or replace view {platform}_{table} as select * from read_parquet("
                     f"'{glob}', hive_partitioning = true, union_by_name = true)"
                 )
+    if _glob(data_dir, "roblox", "creator_games"):
+        con.execute(
+            "create or replace view roblox_creator_games_latest as "
+            "select * exclude (date) from roblox_creator_games qualify snapshot_at = "
+            "max(snapshot_at) over (partition by creator_type, creator_id)"
+        )
     if _glob(data_dir, "fortnite", "snapshots"):
         con.execute(
             "create or replace view fortnite_snapshots_latest as "

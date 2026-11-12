@@ -1,0 +1,272 @@
+# Publicación en Kaggle (pipeline/export.py + .github/workflows/kaggle_weekly.yml).
+# Textos en inglés: es el público de Kaggle. La descripción larga está en
+# config/kaggle_description.md.
+
+dataset:
+  slug: ugc-games-roblox-fortnite          # id = <KAGGLE_USERNAME>/<slug>
+  title: "UGC Games: Roblox & Fortnite Tracker"          # 6–50 caracteres
+  subtitle: "Hourly/daily snapshots of Roblox experiences and Fortnite islands, with features"
+  license: CC-BY-NC-4.0
+  keywords: [games, video games, time series, popularity, data analytics]
+  expected_update_frequency: weekly
+
+# Tablas exportadas: archivo → vista DuckDB (pipeline.db.connect). `split_by`: columna de
+# fecha para partir en un archivo por mes (<archivo>_YYYY-MM.parquet). `exclude`: columnas
+# internas que no se publican.
+tables:
+  roblox_games:
+    view: roblox_games_enriched
+    description: >-
+      One row per tracked Roblox experience (current state) with derived features: unified
+      genre, title features, creator history and title-clone family.
+  roblox_games_history:
+    view: roblox_games_history
+    description: >-
+      Change log of the Roblox games dimension: a new row every time any attribute changes
+      (valid from `valid_from`).
+  roblox_snapshots:
+    view: roblox_snapshots
+    split_by: snapshot_at
+    exclude: [date]
+    description: >-
+      Raw snapshots of each Roblox experience (concurrent players, visits, favorites, votes).
+      Hot games every hour, warm daily, cold weekly.
+  roblox_daily:
+    view: roblox_daily
+    description: Daily series per Roblox experience built from the snapshots (UTC days).
+  roblox_game_metrics:
+    view: roblox_game_metrics
+    description: >-
+      Derived metrics per Roblox experience: days to peak, growth slopes, half-life of the
+      decline, engagement ratios.
+  roblox_chart_positions:
+    view: roblox_chart_positions
+    split_by: snapshot_at
+    exclude: [date]
+    description: Position of each experience in Roblox's explore charts (sorts), every hour.
+  roblox_search_positions:
+    view: roblox_search_positions
+    split_by: snapshot_at
+    exclude: [date]
+    description: Daily keyword search sweep on Roblox (rank of each result per keyword).
+  roblox_events:
+    view: roblox_events
+    exclude: [date]
+    description: >-
+      Detected changes: name, description, update, icon and thumbnail changes (old and new
+      value).
+  roblox_tier_history:
+    view: roblox_tier_history
+    exclude: [date]
+    description: Every change of tracking tier (hot / warm / cold) and its reason.
+  roblox_media:
+    view: roblox_media
+    description: Current icon (image hash) and thumbnail carousel (asset ids) of each experience.
+  roblox_gamepasses:
+    view: roblox_gamepasses
+    description: Current game passes of each experience (price, for sale, dates).
+  roblox_creator_games:
+    view: roblox_creator_games_latest
+    description: >-
+      All public experiences of each tracked creator (latest listing), with lifetime visits
+      at listing time.
+  fortnite_islands:
+    view: fortnite_games_enriched
+    description: >-
+      One row per Fortnite island in the public catalog (current state) with derived
+      features: unified genre, title features, creator history and title-clone family.
+  fortnite_islands_history:
+    view: fortnite_games_history
+    description: Change log of the Fortnite islands dimension (valid from `valid_from`).
+  fortnite_snapshots:
+    view: fortnite_snapshots_latest
+    split_by: bucket_start
+    exclude: [date]
+    description: >-
+      Daily and hourly metrics per island from the Fortnite Data API (latest value of each
+      bucket). Values are null when the bucket had fewer than 5 unique players.
+  fortnite_daily:
+    view: fortnite_daily
+    description: Closed daily buckets per island (one row per island and day).
+  fortnite_island_metrics:
+    view: fortnite_game_metrics
+    description: >-
+      Derived metrics per island: days to peak, growth slopes, half-life of the decline,
+      engagement and retention.
+  fortnite_events:
+    view: fortnite_events
+    exclude: [date]
+    description: Detected changes in the catalog (new / removed / relisted islands, title, tags).
+  fortnite_tier_history:
+    view: fortnite_tier_history
+    exclude: [date]
+    description: Every change of tracking tier (hot / warm / cold) and its reason.
+  fortnite_niche_opportunity:
+    view: fortnite_niche_opportunity
+    description: >-
+      Demand vs. competition per unified genre (excluding Epic's own islands). Preliminary
+      until two weeks of coverage exist.
+  title_clones:
+    view: title_clones
+    description: >-
+      Title-clone families across both platforms: games whose normalized titles share the
+      same words.
+
+# Descripción de cada columna, por nombre (vale para todas las tablas que la tengan).
+columns:
+  # ids y dimensión
+  universe_id: Roblox universe (experience) id.
+  root_place_id: Roblox id of the experience's start place.
+  island_code: Fortnite island code (e.g. 1234-5678-9012).
+  id: Game id (universe_id for Roblox, island_code for Fortnite).
+  platform: roblox or fortnite.
+  name: Name of the experience.
+  title: Title of the island.
+  description: Description text.
+  creator_id: Roblox creator id (user or group).
+  creator_name: Roblox creator name.
+  creator_type: Roblox creator type (User or Group).
+  creator_verified: The Roblox creator has a verified badge.
+  creator_code: Fortnite creator code.
+  genre_raw: Roblox legacy genre field.
+  genre_l1: Roblox genre (top level of the official taxonomy).
+  genre_l2: Roblox subgenre (second level of the official taxonomy).
+  genre_unified: Unified Roblox/Fortnite genre (see config/genres.yaml in the code repo).
+  genres: All unified genres matched by the island's tags, by priority.
+  category: Licensed IP of the island as given by the API (e.g. LEGO, Star Wars).
+  licensed_ip: Licensed IP, normalized to upper case.
+  created_in: Fortnite tool used to build the island (UEFN or FNC).
+  tags: Island tags as given by the API.
+  age_rating: Roblox content maturity / age rating.
+  is_officially_licensed: Roblox flag for officially licensed experiences.
+  max_players: Maximum players per server.
+  price: Price in Robux to access the experience (null if free).
+  created_at: Creation timestamp (UTC) given by the platform.
+  updated_at: Last update timestamp (UTC) given by the platform.
+  first_seen_at: First time this project saw the game (UTC).
+  first_traction_at: First snapshot / day with at least 100 concurrent players.
+  discovered_via: How the game entered tracking (chart, search, ...).
+  tier: Tracking tier (hot, warm or cold) that sets the snapshot frequency.
+  is_listed: The island is still in the public catalog.
+  valid_from: Timestamp (UTC) since which this row is the current state.
+  # snapshots y series
+  snapshot_at: Real timestamp (UTC) of the request.
+  date: Partition date.
+  playing: Concurrent players at snapshot time.
+  visits: Lifetime visits.
+  favorites: Favorites (Roblox lifetime; Fortnite new favorites in the bucket).
+  up_votes: Likes.
+  down_votes: Dislikes.
+  interval: Bucket size of the metric (day or hour).
+  bucket_start: Start of the metric bucket (UTC).
+  is_partial: The bucket / day was still open when read.
+  plays: Plays in the bucket.
+  unique_players: Unique players in the bucket.
+  peak_ccu: Peak concurrent players (in the bucket / day / overall, depending on the table).
+  avg_minutes_per_player: Average minutes played per player in the bucket.
+  minutes_played: Total minutes played in the bucket.
+  recommendations: Recommendations in the bucket.
+  retention_d1: Day-1 retention of players from that day (0–1).
+  retention_d7: Day-7 retention of players from that day (0–1).
+  day: UTC day.
+  avg_ccu: Average concurrent players over the day's snapshots.
+  n_snapshots: Snapshots taken that day.
+  # charts y búsqueda
+  sort_id: Roblox explore sort id.
+  sort_name: Roblox explore sort title.
+  rank: Position in the chart / search results (1 = top).
+  player_count: Players shown by Roblox next to the result.
+  is_sponsored: Sponsored (paid) slot.
+  keyword: Search keyword.
+  # eventos y tiers
+  detected_at: When the change was detected (UTC).
+  event_type: Kind of change.
+  old_value: Value before the change.
+  new_value: Value after the change.
+  changed_at: When the tier changed (UTC).
+  from_tier: Previous tier.
+  to_tier: New tier.
+  reason: Rule that triggered the change.
+  # assets
+  icon_state: State of the icon image (Completed, Blocked, ...).
+  icon_hash: Hash identifying the icon image (same across sizes).
+  thumbnail_ids: Asset ids of the thumbnail carousel, in display order.
+  pass_id: Game pass id.
+  product_id: Game pass product id.
+  is_for_sale: The game pass is for sale.
+  icon_asset_id: Asset id of the game pass icon.
+  # creadores
+  creator_total_games: Public experiences of the creator.
+  creator_first_game_at: Creation date of the creator's first public experience.
+  creator_checked_at: When the creator's games were listed.
+  creator_prev_games: Creator's experiences created before this one.
+  creator_prev_max_visits: Max lifetime visits among the creator's previous experiences.
+  creator_prev_total_visits: Total lifetime visits of the creator's previous experiences.
+  creator_prev_hits: Creator's previous experiences with at least 1M visits.
+  creator_other_islands: Other islands by the same creator in the catalog.
+  creator_other_with_data: Other islands by the same creator with observed metrics.
+  creator_best_peak_other: Best observed daily peak CCU among the creator's other islands.
+  creator_prev_islands_seen: Islands by the creator first seen before this one.
+  place_visits: Lifetime visits at listing time.
+  # features de título
+  title_len: Title length in characters.
+  title_words: Words in the title.
+  n_emojis: Emoji code points in the title.
+  has_emoji: The title has emojis.
+  has_number: The title has digits.
+  has_exclamation: The title has an exclamation mark.
+  caps_ratio: Share of upper-case letters in the title.
+  has_brackets: The title has [..], (..) or 【..】.
+  starts_with_bracket: The title starts with a bracket tag.
+  bracket_tags: Text inside each bracket tag (emojis removed).
+  has_update_tag: Bracket tag announcing an update (UPD, UPDATE, NEW, PART 2, ...).
+  has_beta_tag: Bracket tag announcing a beta / early access.
+  has_event_tag: Bracket tag announcing an event or season (HALLOWEEN, EVENT, ...).
+  has_multiplier: The title has a multiplier such as 2X or x10.
+  title_clean: Title without bracket tags and emojis.
+  title_keywords: Tracked keywords present in the title.
+  description_len: Description length in characters.
+  # clones
+  tokens: Normalized title words used for clone matching.
+  title_key: Exact title family (sorted normalized words).
+  launched_at: Launch date used for ordering (Roblox creation date; Fortnite first seen).
+  title_family_size: Games in the exact title family (both platforms).
+  clone_key: Extended title family (adds unique titles with one extra word).
+  clone_group_size: Games in the extended family (both platforms).
+  clone_group_size_roblox: Roblox games in the extended family.
+  clone_group_size_fortnite: Fortnite islands in the extended family.
+  clone_rank: Order of appearance within the extended family (1 = first).
+  clone_group_first_at: Launch date of the first game in the extended family.
+  # métricas
+  first_day: First closed day with data.
+  last_day: Last closed day with data.
+  obs_days: Closed days with data.
+  peak_day: First day with the maximum daily peak.
+  median_daily_peak: Median of the daily peaks.
+  peak_over_median: Peak / median daily peak (isolated spike vs. steady traction).
+  anchor_day: Day of first traction (day 0 for the curve metrics).
+  traction_censored: Already had traction when tracking started (launch timing unknown).
+  days_to_peak: Days from first traction to the peak.
+  days_since_peak: Days from the peak to the last observed day.
+  slope_d1_7: Slope of ln(1 + daily peak) per day over days 0–6 from first traction.
+  slope_d1_14: Slope of ln(1 + daily peak) per day over days 0–13 from first traction.
+  half_life_days: Days from the peak until the daily peak first drops to half.
+  sustained_ratio: Average daily peak on days 30–60 from first traction / overall peak.
+  favorites_per_visit: Favorites / visits (latest).
+  like_ratio: Likes / (likes + dislikes) (latest).
+  visits_last: Latest lifetime visits.
+  visits_per_day_7d: Visits gained per day over the last 7 observed days.
+  favorites_per_player: Favorites / unique players over observed days.
+  recommendations_per_player: Recommendations / unique players over observed days.
+  retention_d1_mean: Mean day-1 retention over observed days.
+  retention_d7_mean: Mean day-7 retention over observed days.
+  minutes_per_player_mean: Mean minutes per player over observed days.
+  # oportunidad
+  islands_listed: Listed islands in the genre.
+  islands_active: Islands with players in their last covered week.
+  demand_w1: Unique players summed over each island's last covered week.
+  demand_growth: Week-over-week demand growth (islands with two covered weeks).
+  demand_per_active_island: demand_w1 / islands_active.
+  median_island_demand: Median weekly demand of active islands (the typical island).
+  top10_share: Share of the demand taken by the top 10 islands.
+  opportunity_score: Player-days gained in the week / active islands.

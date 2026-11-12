@@ -258,6 +258,21 @@ con.sql("""
 
 `uv run python -m pipeline.db` lista las vistas disponibles y sus filas.
 
+## Publicación en Kaggle
+
+[`pipeline/export.py`](pipeline/export.py) arma el dataset para Kaggle: un Parquet por tabla
+(los que crecen sin límite, uno por mes), con las features ya calculadas y cada columna
+documentada en [`config/kaggle.yaml`](config/kaggle.yaml). La descripción del dataset está en
+[`config/kaggle_description.md`](config/kaggle_description.md).
+
+```bash
+uv run python -m pipeline.export --out export --owner <usuario-de-kaggle>
+```
+
+El workflow `kaggle_weekly.yml` exporta y sube una versión nueva (`workflow_dispatch` con
+`create` para la primera publicación, que queda privada). Necesita los secrets
+`KAGGLE_USERNAME` y `KAGGLE_API_TOKEN`. Licencia: CC BY-NC 4.0.
+
 ## Correr localmente
 
 Requiere [uv](https://docs.astral.sh/uv/).
@@ -288,7 +303,8 @@ umbrales como `hourly_min_peak_ccu`) en [`config/collectors.yaml`](config/collec
 | `roblox_hourly.yml` | cada hora (:17) — **activo** | charts + descubiertos por búsqueda + detalles y votos de los juegos que tocan por tier. Cada run es un loop de ~5,5 h ([`scripts/hourly_loop.sh`](scripts/hourly_loop.sh)) que se relanza solo; el cron (cada 3 h) solo retoma la cadena si se corta, porque el cron de GitHub saltea muchas corridas. Después de cada corrida lanza los diarios cuyo cron no disparó ([`scripts/dispatch_missed.sh`](scripts/dispatch_missed.sh), 90 min de margen). Si después el cron llega tarde, el job `guard` de cada diario ([`scripts/ran_today.sh`](scripts/ran_today.sh)) saltea esa segunda corrida |
 | `roblox_search.yml` | diario (06:23 UTC) — **activo** | barrido de keywords (~5,5 h, 1 req/min) → `search_positions` |
 | `roblox_assets.yml` | diario (08:11 UTC) — **activo** | ícono, miniaturas y gamepasses (hot/warm diario, cold semanal; ~8 min) → `media`, `gamepasses`, `asset_checks`, `events` |
-| `roblox_creators.yml` | diario (09:41 UTC) | historial de creadores: nuevos primero, después cada uno 1 vez por semana (70 min de presupuesto) → `creator_games`, `creator_checks` |
+| `roblox_creators.yml` | diario (09:41 UTC) — **activo** | historial de creadores: nuevos primero, después cada uno 1 vez por semana (70 min de presupuesto) → `creator_games`, `creator_checks` |
+| `kaggle_weekly.yml` | semanal (sin activar) | exporta y publica una versión nueva del dataset en Kaggle |
 | `fortnite_daily.yml` | diario (03:37 UTC) — **activo** | catálogo + métricas de las islas que tocan por tier (~2,5–3,5 h) |
 | `quality_daily.yml` | diario (12:53 UTC) — **activo** | checks de calidad → `quality`; falla si hay errores |
 | `compact_weekly.yml` | domingos (02:47 UTC) | junta los Parquet de cada partición de hace ≥ 2 días en uno ([`pipeline/compact.py`](pipeline/compact.py)); mismo contenido |

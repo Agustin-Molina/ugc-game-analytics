@@ -1,0 +1,84 @@
+name: kaggle_weekly
+
+# Publica el dataset en Kaggle (pipeline/export.py → config/kaggle.yaml): un Parquet por
+# tabla, con las features calculadas y el esquema documentado. Una versión nueva por semana.
+#
+# Secrets (los carga el dueño del repo; nunca en el código):
+#   KAGGLE_USERNAME   usuario de Kaggle (el dataset queda en <usuario>/<slug>)
+#   KAGGLE_API_TOKEN  token de kaggle.com/settings → API → Generate New Token
+on:
+  workflow_dispatch:
+    inputs:
+      create:
+        description: "Primera publicación: crea el dataset (privado; se hace público en la web)"
+        type: boolean
+        default: false
+  # Sin activar: primero una publicación manual revisada (CLAUDE.md).
+  # schedule:
+  #   - cron: "29 4 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kaggle_weekly
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Verificar secrets
+        env:
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          if [ -z "${KAGGLE_USERNAME}" ] || [ -z "${KAGGLE_API_TOKEN}" ]; then
+            echo "::error::faltan los secrets KAGGLE_USERNAME y/o KAGGLE_API_TOKEN"
+            exit 1
+          fi
+
+      - name: Checkout código
+        uses: actions/checkout@v5
+
+      - name: Checkout repo de datos
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ github.repository_owner }}/ugc-game-analytics-data
+          ssh-key: ${{ secrets.DATA_REPO_DEPLOY_KEY }}
+          path: data
+          fetch-depth: 1
+
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Dependencias
+        run: uv sync --frozen --no-dev
+
+      - name: Exportar
+        env:
+          UGC_DATA_DIR: data
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+        run: uv run --no-dev python -m pipeline.export --out export --owner "${KAGGLE_USERNAME}"
+
+      - name: Publicar en Kaggle
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+          CREATE: ${{ inputs.create }}
+        run: |
+          # kaggle 2.2.5 no declara su dependencia de six
+          kaggle() { uvx --from kaggle==2.2.5 --with six==1.17.0 kaggle "$@"; }
+          if [ "${CREATE}" = "true" ]; then
+            kaggle datasets create -p export -r skip -t
+          else
+            kaggle datasets version -p export -r skip -t -m "Weekly update $(date -u +%F)"
+          fi
+          {
+            echo "## Kaggle"
+            echo ""
+            echo "- archivos: $(ls export/*.parquet | wc -l) · $(du -sh export | cut -f1)"
+            echo "- modo: $([ "${CREATE}" = "true" ] && echo 'creación (privado)' || echo 'versión nueva')"
+          } >> "${GITHUB_STEP_SUMMARY}"
