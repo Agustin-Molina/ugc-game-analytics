@@ -22,7 +22,7 @@ Los datos viven en un repo aparte: **[ugc-game-analytics-data](https://github.co
 | 0 — Colector mínimo | ✅ todos los crons activos (2026-11-10) |
 | 1 — Robustez (tiers, calidad, keywords, compactación) | ✅ completa (2026-11-11) |
 | 2 — Enriquecimiento | en curso: ícono, miniaturas, gamepasses, géneros unificados, features de título, historial del creador, clones y métricas derivadas listos; falta mudar el almacenamiento (~500 MB) |
-| 3 — Análisis | en curso: score de oportunidad por nicho (Fortnite, preliminar hasta tener 2 semanas) |
+| 3 — Análisis | en curso: notebook de EDA y score de oportunidad por nicho (Fortnite, preliminar hasta tener 2 semanas) |
 
 ## Fuentes
 
@@ -305,6 +305,18 @@ umbrales como `hourly_min_peak_ccu`) en [`config/collectors.yaml`](config/collec
 
 > En Windows con *Smart App Control* activo, los binarios de polars/pyarrow pueden estar
 > bloqueados; usar WSL (es además el mismo entorno que GitHub Actions).
+
+## Notebook de EDA
+
+[`notebooks/eda.ipynb`](notebooks/eda.ipynb) (en inglés, pensado también para Kaggle):
+qué se trackea, concentración del CCU, ciclo diario, géneros por plataforma, oportunidad por
+nicho, historial del creador, clones, retención de Fortnite y curvas de lanzamientos. Lee los
+Parquet del export de Kaggle, así que corre igual en Kaggle (`/kaggle/input/...`) y localmente:
+
+```bash
+uv run python -m pipeline.export --out export --owner local --data-dir ../ugc-game-analytics-data
+cd notebooks && uv run --group notebook jupyter nbconvert --to notebook --execute --inplace eda.ipynb
+```
 
 ## Automatización
 

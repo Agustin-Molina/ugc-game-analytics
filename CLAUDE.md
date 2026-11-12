@@ -94,7 +94,7 @@ También es un proyecto de portfolio de data: código limpio, README claro, data
 - [ ] Mover almacenamiento a dataset de Kaggle o Hugging Face si el repo pasa ~500 MB.
 
 ### Fase 3 — Análisis (desde mes 2)
-- [ ] Notebook de EDA.
+- [x] Notebook de EDA (`notebooks/eda.ipynb`, lee el export de Kaggle; se profundiza con más semanas).
 - [ ] Score de oportunidad por nicho = crecimiento de demanda / cantidad de juegos compitiendo.
 - [ ] Definir éxito: "explosión" (peak CCU >= X en 14 días desde first_traction) y
       "sostenido" (CCU día 30–60 >= 30% del peak). Umbrales por plataforma.
