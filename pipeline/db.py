@@ -18,6 +18,8 @@ Vistas creadas (solo las de tablas que ya tienen archivos):
 - `title_clones`                 familias de títulos entre plataformas (pipeline/clones.py)
 - `<plataforma>_daily`, `<plataforma>_game_metrics`  serie diaria y métricas derivadas
                                  (días hasta el peak, pendientes, vida media; pipeline/metrics.py)
+- `fortnite_island_demand`, `fortnite_niche_opportunity`  demanda semanal por isla y score de
+                                 oportunidad por nicho (pipeline/opportunity.py)
 
 `python -m pipeline.db [--data-dir PATH]` lista las vistas y sus filas.
 """
@@ -32,6 +34,7 @@ import duckdb
 from collectors.common import resolve_data_dir
 from pipeline.features import register as register_features
 from pipeline.metrics import register as register_metrics
+from pipeline.opportunity import register as register_opportunity
 
 DIMENSION_KEYS = {"roblox": "universe_id", "fortnite": "island_code"}
 # otros logs de cambios (valid_from): tabla → clave
@@ -97,6 +100,7 @@ def connect(
     if features:
         register_features(con)
         register_metrics(con)
+        register_opportunity(con)
     return con
 
 

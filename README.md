@@ -22,7 +22,7 @@ Los datos viven en un repo aparte: **[ugc-game-analytics-data](https://github.co
 | 0 — Colector mínimo | ✅ todos los crons activos (2026-11-10) |
 | 1 — Robustez (tiers, calidad, keywords, compactación) | ✅ completa (2026-11-11) |
 | 2 — Enriquecimiento | en curso: ícono, miniaturas, gamepasses, géneros unificados, features de título, historial del creador, clones y métricas derivadas listos; falta mudar el almacenamiento (~500 MB) |
-| 3 — Análisis | pendiente |
+| 3 — Análisis | en curso: score de oportunidad por nicho (Fortnite, preliminar hasta tener 2 semanas) |
 
 ## Fuentes
 
@@ -224,6 +224,25 @@ con.sql("select genre_unified, count(*) from fortnite_game_features group by 1 o
 sabemos cuándo despegaron, así que para estudiar lanzamientos hay que filtrarlos. Los juegos
 cold se miran una vez por semana: su serie diaria tiene huecos.
 
+### Score de oportunidad por nicho (Fase 3, preliminar)
+
+[`pipeline/opportunity.py`](pipeline/opportunity.py) cruza demanda y competencia por género
+unificado. Por ahora Fortnite, que tiene historia diaria completa:
+
+```bash
+uv run python -m pipeline.opportunity
+```
+
+- **Demanda** de cada isla: jugadores únicos sumados en la última semana cubierta por sus
+  consultas (semana completa: los fines de semana tienen el doble de jugadores, así que
+  comparar días sueltos engaña). Un día sin datos dentro de la cobertura cuenta como 0 (la
+  API no publica menos de 5 jugadores).
+- **Por nicho**: islas listadas y activas, demanda total, demanda por isla activa, mediana
+  (la isla típica), concentración en el top 10 y crecimiento semana contra semana.
+- **Score** = jugadores-día ganados en la semana / islas activas (la definición de este
+  proyecto). Necesita 14 días de cobertura; hasta entonces la tabla se ordena por la mediana.
+- Sin las islas de Epic, que no compiten con los creadores.
+
 ### Leer con DuckDB
 
 ```python
@@ -285,8 +304,8 @@ Los workflows hacen checkout del repo de datos en `./data` con una deploy key
 collectors/   common.py (HTTP, reintentos, rate limit, Parquet), roblox.py, roblox_search.py,
               roblox_assets.py, roblox_creators.py, fortnite.py
 config/       collectors.yaml, tiers.yaml, keywords.yaml, quality.yaml, genres.yaml
-pipeline/     db.py (vistas DuckDB), features.py, clones.py, metrics.py, tiers.py, quality.py,
-              compact.py
+pipeline/     db.py (vistas DuckDB), features.py, clones.py, metrics.py, opportunity.py,
+              tiers.py, quality.py, compact.py
 tests/        pytest + respx, sin red
 scripts/      commit_data.sh
 .github/workflows/
