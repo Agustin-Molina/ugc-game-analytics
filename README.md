@@ -341,6 +341,29 @@ uv run python -m pipeline.export --out export --owner local --data-dir ../ugc-ga
 cd notebooks && uv run --group notebook jupyter nbconvert --to notebook --execute --inplace eda.ipynb
 ```
 
+## Dashboard
+
+[`dashboard/`](dashboard/) (Streamlit, en inglés) sobre el mismo export:
+
+- **Overview**: juegos más jugados en cada plataforma y ciclo diario de jugadores.
+- **Niches**: oportunidad por nicho en Roblox (incluida la parte de las visitas que se llevan
+  los juegos nuevos) y en Fortnite, con orden y filtros.
+- **Launches**: juegos observados desde su primera tracción; se eligen filas para comparar
+  sus curvas.
+- **Game lookup**: búsqueda por nombre en las dos plataformas, con serie temporal, perfil,
+  historial del creador, familia de clones, charts de Roblox y cambios detectados.
+- **Clones**: familias de títulos y sus miembros.
+
+```bash
+uv run python -m pipeline.export --out export --owner local --data-dir ../ugc-game-analytics-data
+uv run --group dashboard streamlit run dashboard/app.py
+```
+
+La capa de datos ([`dashboard/data.py`](dashboard/data.py)) son funciones puras sobre DuckDB.
+Los tests ([`tests/test_dashboard.py`](tests/test_dashboard.py)) corren cada página con el
+`AppTest` de Streamlit sobre un export mínimo, que además documenta qué columnas usa el
+dashboard.
+
 ## Automatización
 
 | Workflow | Frecuencia | Qué hace |
@@ -367,9 +390,11 @@ collectors/   common.py (HTTP, reintentos, rate limit, Parquet), roblox.py, robl
               roblox_assets.py, roblox_creators.py, fortnite.py
 config/       collectors.yaml, tiers.yaml, keywords.yaml, quality.yaml, genres.yaml
 pipeline/     db.py (vistas DuckDB), features.py, clones.py, metrics.py, opportunity.py,
-              tiers.py, quality.py, compact.py
+              tiers.py, quality.py, compact.py, export.py (Kaggle)
+dashboard/    app.py (Streamlit), data.py (consultas), ui.py (gráficos), views/
+notebooks/    eda.ipynb
 tests/        pytest + respx, sin red
-scripts/      commit_data.sh
+scripts/      commit_data.sh, hourly_loop.sh, ran_today.sh, dispatch_missed.sh, kaggle_cover.py
 .github/workflows/
 ```
 

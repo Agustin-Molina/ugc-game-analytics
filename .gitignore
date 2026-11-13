@@ -24,3 +24,6 @@ Thumbs.db
 .vscode/
 .idea/
 export/
+
+# Configuración local de Claude Code (rutas de esta máquina)
+.claude/

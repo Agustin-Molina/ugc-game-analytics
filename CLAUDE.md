@@ -101,7 +101,8 @@ También es un proyecto de portfolio de data: código limpio, README claro, data
 - [ ] Definir éxito: "explosión" (peak CCU >= X en 14 días desde first_traction) y
       "sostenido" (CCU día 30–60 >= 30% del peak). Umbrales por plataforma.
 - [ ] Modelo de detección temprana (necesita ~6–8 semanas de lanzamientos observados).
-- [ ] Dashboard (Streamlit o similar) + publicación periódica en Kaggle.
+- [x] Dashboard (Streamlit o similar) + publicación periódica en Kaggle (`dashboard/`, corre
+      local sobre el export; desplegarlo en Streamlit Cloud queda para el lanzamiento público).
 
 ## Estructura del repo
 ```

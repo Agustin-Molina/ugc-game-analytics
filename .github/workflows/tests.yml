@@ -27,10 +27,10 @@ jobs:
           enable-cache: true
 
       - name: Dependencias
-        run: uv sync --frozen
+        run: uv sync --frozen --group dashboard   # los tests del dashboard usan Streamlit
 
       - name: Lint
         run: uv run ruff check
 
       - name: Tests
-        run: uv run pytest -q
+        run: uv run --group dashboard pytest -q
