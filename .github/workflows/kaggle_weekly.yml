@@ -108,6 +108,20 @@ jobs:
           # ni portada: van por metadata --update. La ficha sale de config/kaggle.yaml (incluida
           # la visibilidad, `private`): lo que se edite a mano en la web se pisa acá.
           dataset_id="$(jq -r .id export/dataset-metadata.json)"
+          # La versión se procesa en Kaggle después de subirla; mientras tanto el update de la
+          # ficha rechaza los archivos nuevos ("doesn't contain a file named ..."). Esperar a
+          # que esté lista (hasta ~20 min).
+          status=""
+          for _ in $(seq 1 40); do
+            status="$(kaggle datasets status "${dataset_id}" 2>/dev/null | tail -n 1 || true)"
+            [ "${status}" = "ready" ] && break
+            if [ "${status}" = "failed" ]; then
+              echo "::error::Kaggle no pudo procesar la versión nueva"
+              exit 1
+            fi
+            sleep 30
+          done
+          echo "estado de la versión: ${status}"
           # El endpoint de update no acepta el nombre de licencia de `create` ("invalid
           # license"): se reusa la licencia tal como la guarda Kaggle.
           mkdir -p current
@@ -117,12 +131,22 @@ jobs:
             jq --argjson lic "${lic}" '.licenses = $lic' export/dataset-metadata.json \
               > current/merged.json && mv current/merged.json export/dataset-metadata.json
           fi
-          kaggle datasets metadata --update -p export "${dataset_id}" \
-            || echo "::warning::no se pudo actualizar la metadata (la versión sí se publicó)"
+          metadata="falló"
+          for attempt in 1 2 3; do
+            if kaggle datasets metadata --update -p export "${dataset_id}"; then
+              metadata="ok"
+              break
+            fi
+            [ "${attempt}" -lt 3 ] && sleep 120
+          done
+          if [ "${metadata}" != "ok" ]; then
+            echo "::warning::no se pudo actualizar la metadata (la versión sí se publicó)"
+          fi
           {
             echo "## Kaggle"
             echo ""
             echo "- archivos: $(ls export/*.parquet | wc -l) · $(du -sh export | cut -f1)"
             echo "- modo: $([ "${METADATA_ONLY}" = "true" ] && echo 'solo ficha' || { [ "${CREATE}" = "true" ] && echo 'creación (privado)' || echo 'versión nueva'; })"
             echo "- privado: $(jq -r .isPrivate export/dataset-metadata.json)"
+            echo "- ficha (metadata --update): ${metadata}"
           } >> "${GITHUB_STEP_SUMMARY}"
