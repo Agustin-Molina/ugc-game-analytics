@@ -164,7 +164,9 @@ columns:
   updated_at: Last update timestamp (UTC) given by the platform.
   first_seen_at: First time this project saw the game (UTC).
   first_traction_at: First snapshot / day with at least 100 concurrent players.
-  discovered_via: How the game entered tracking (chart, search, ...).
+  discovered_via: >-
+    How the game entered tracking: chart:<chart>, search:<keyword> or
+    creator:<group|user>:<id> (a new game of an already known creator, caught near launch).
   tier: Tracking tier (hot, warm or cold) that sets the snapshot frequency.
   is_listed: The island is still in the public catalog.
   valid_from: Timestamp (UTC) since which this row is the current state.

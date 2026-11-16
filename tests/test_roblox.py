@@ -176,6 +176,62 @@ async def test_discovers_untracked_games_from_search_positions(tmp_path, cfg):
     assert any("descubiertos por búsqueda: 2" in n for n in summary.notes)
 
 
+def test_discover_from_creators():
+    now = roblox.utcnow()
+    D = roblox.timedelta(days=1)
+    cg = pl.DataFrame(
+        [
+            # (universe_id, snapshot, tipo, creador, creado, visitas)
+            (1, now - D, "Group", 7, now - 2 * D, 30),       # nuevo con visitas → entra
+            (2, now - D, "User", 8, now - 40 * D, 5),        # 40 días → entra
+            (3, now - D, "Group", 7, now - 90 * D, 9999),    # muy viejo → no
+            (4, now - D, "Group", 7, now - 1 * D, 0),        # sin visitas (place vacío) → no
+            (5, now - D, "Group", 7, now - 3 * D, 50),       # ya trackeado → no
+            (1, now - 5 * D, "Group", 7, now - 2 * D, 10),   # foto vieja del mismo juego
+        ],
+        schema=roblox.CREATOR_COLS, orient="row",
+    )
+    rcfg = {"creators_new_game_days": 60, "creators_new_min_visits": 1,
+            "creators_new_per_run": 10}
+    meta: dict = {}
+    got = roblox.discover_from_creators(cg, {5}, rcfg, meta, now)
+    assert got == [1, 2]  # del más nuevo al más viejo, sin repetidos
+    assert meta[1]["via"] == "creator:group:7" and meta[2]["via"] == "creator:user:8"
+    rcfg["creators_new_per_run"] = 1
+    assert roblox.discover_from_creators(cg, {5}, rcfg, {}, now) == [1]
+
+
+@respx.mock
+async def test_run_tracks_new_games_of_known_creators(tmp_path, cfg):
+    now = roblox.utcnow()
+    from collectors import roblox_creators
+    cg = roblox_creators.frame(
+        [{"snapshot_at": now - roblox.timedelta(hours=5), "creator_type": "Group",
+          "creator_id": 77, "universe_id": 6000000001, "root_place_id": 1, "name": "New One",
+          "created_at": now - roblox.timedelta(days=1), "updated_at": now,
+          "place_visits": 12}],
+        roblox_creators.CREATOR_GAMES_SCHEMA)
+    write_partition(cg, tmp_path, "roblox", "creator_games", now, "c1")
+    mock_apis()
+
+    def games(request: httpx.Request) -> httpx.Response:
+        ids = [int(x) for x in request.url.params["universeIds"].split(",")]
+        base = load("roblox_games.json")["data"]
+        known = {g["id"]: g for g in base}
+        data = [known.get(i) or {**base[2], "id": i, "name": f"g{i}", "playing": 3,
+                                 "created": (now - roblox.timedelta(days=1)).isoformat()}
+                for i in ids]
+        return httpx.Response(200, json={"data": data})
+
+    respx.get(url__regex=re.escape(GAMES) + r"\?").mock(side_effect=games)
+    summary = await roblox.run(tmp_path, limit=None, dry_run=False, cfg=cfg)
+    dim = read_dimension(tmp_path, "roblox", roblox.GAMES_SCHEMA, "universe_id")
+    row = dim.filter(pl.col("universe_id") == 6000000001).row(0, named=True)
+    assert row["discovered_via"] == "creator:group:77"
+    assert row["tier"] == "warm"  # recién creado y chico: se mide a diario, no semanal
+    assert any("descubiertos por creadores: 1" in n for n in summary.notes)
+
+
 @respx.mock
 async def test_batches_respect_api_limits(tmp_path, cfg):
     respx.get(SORTS).mock(return_value=httpx.Response(200, json={"sorts": []}))

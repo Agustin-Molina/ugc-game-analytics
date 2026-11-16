@@ -116,7 +116,7 @@ juego tiene un tier ([`config/tiers.yaml`](config/tiers.yaml), lógica en
 | tier | se consulta | criterio (por defecto) |
 |---|---|---|
 | hot | cada hora | en algún chart, playing ≥ 1000, crecimiento ≥ 1,5× en ~24 h (con ≥ 100), o creado hace ≤ 14 días con ≥ 20 — cualquier señal en las últimas 48 h |
-| warm | diario | pico ≥ 20 en 11 días, o en un chart en los últimos 7 días |
+| warm | diario | pico ≥ 20 en 11 días, en un chart en los últimos 7 días, o creado hace ≤ 30 días (los lanzamientos chicos también se miden a diario) |
 | cold | semanal | el resto (incluye privados/borrados) |
 
 Warm y cold se reparten por hash del id en slots horarios (24 y 168) → carga pareja; los que
@@ -156,6 +156,24 @@ workflow aparte de ~5,5 h (≈ 325 páginas de 40): recorre las keywords en anch
 de todas, después la 2, …) para que todas queden cubiertas. Medido: la búsqueda ordena por
 relevancia (no por fecha) y casi no muestra juegos de pocos días; aporta long tail, no
 lanzamientos del día.
+
+### Descubrimiento por creadores (Roblox)
+
+Medido el 2026-11-16: los charts y la búsqueda encontraban los juegos nuevos **~19 días
+después de creados** (mediana), cuando ya habían crecido, así que se perdían los primeros
+días, que en Roblox no se pueden recuperar. El historial de creadores
+([`collectors/roblox_creators.py`](collectors/roblox_creators.py)) ya lista todos los juegos
+públicos de cada creador conocido, con fecha de creación y visitas, y de ahí salen los
+lanzamientos:
+
+- La corrida horaria empieza a trackear los juegos de `creator_games` creados hace ≤ 60 días
+  con alguna visita que todavía no seguía (hasta 500 por corrida, del más nuevo al más viejo;
+  `discovered_via = creator:<tipo>:<id>`). La primera vez fueron ~2.500.
+- Los creadores **activos con hits** (algún juego ≥ 1M visitas y un lanzamiento en los
+  últimos 30 días; ~490 grupos + ~90 usuarios) se consultan **todos los días** en vez de una
+  vez por semana: sus juegos nuevos entran al tracking el día que se publican.
+- Todo juego creado hace ≤ 30 días queda al menos en warm (diario), crezca o no: así se ve la
+  curva completa de los que explotan y de los que no despegan.
 
 ### Checks de calidad
 
@@ -371,7 +389,7 @@ dashboard.
 | `roblox_hourly.yml` | cada hora (:17) — **activo** | charts + descubiertos por búsqueda + detalles y votos de los juegos que tocan por tier. Cada run es un loop de ~5,5 h ([`scripts/hourly_loop.sh`](scripts/hourly_loop.sh)) que se relanza solo; el cron (cada 3 h) solo retoma la cadena si se corta, porque el cron de GitHub saltea muchas corridas. Después de cada corrida lanza los diarios cuyo cron no disparó ([`scripts/dispatch_missed.sh`](scripts/dispatch_missed.sh), 90 min de margen). Si después el cron llega tarde, el job `guard` de cada diario ([`scripts/ran_today.sh`](scripts/ran_today.sh)) saltea esa segunda corrida |
 | `roblox_search.yml` | diario (06:23 UTC) — **activo** | barrido de keywords (~5,5 h, 1 req/min) → `search_positions` |
 | `roblox_assets.yml` | diario (08:11 UTC) — **activo** | ícono, miniaturas y gamepasses (hot/warm diario, cold semanal; ~8 min) → `media`, `gamepasses`, `asset_checks`, `events` |
-| `roblox_creators.yml` | diario (09:41 UTC) — **activo** | historial de creadores: nuevos primero, después cada uno 1 vez por semana (70 min de presupuesto) → `creator_games`, `creator_checks` |
+| `roblox_creators.yml` | diario (09:41 UTC) — **activo** | historial de creadores: nuevos primero, los activos con hits todos los días y el resto 1 vez por semana (70 min de presupuesto) → `creator_games`, `creator_checks` |
 | `kaggle_weekly.yml` | semanal (lunes 04:29 UTC) — **activo** | exporta y publica una versión nueva del dataset en Kaggle |
 | `fortnite_daily.yml` | diario (03:37 UTC) — **activo** | catálogo + métricas de las islas que tocan por tier (~2,5–3,5 h) |
 | `quality_daily.yml` | diario (12:53 UTC) — **activo** | checks de calidad → `quality`; falla si hay errores |

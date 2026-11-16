@@ -56,7 +56,36 @@ def test_select_creators_new_by_tier_then_due(tmp_path):
     dim = rc.read_dimension(tmp_path, "roblox", rc.GAMES_SCHEMA, "universe_id")
     order, counts = rc.select_creators(dim, rc.last_checks(tmp_path), NOW, 7)
     assert order == [("Group", 1), ("User", 3), ("Group", 2), ("User", 6), ("Group", 5)]
-    assert counts == {"nuevos": 4, "vencidos": 1, "al día": 1}
+    assert counts == {"nuevos": 4, "activos con hits": 0, "vencidos": 1, "al día": 1}
+
+
+def test_active_hit_creators_are_refreshed_daily(tmp_path, cfg):
+    write_games(tmp_path, [(10, "Group", 1, "cold"), (20, "Group", 2, "cold"),
+                           (30, "Group", 3, "cold"), (40, "User", 4, "cold")])
+    # todos consultados hace 1 día (vencerían a los 7)
+    write_checks(tmp_path, [("Group", i, "ok", NOW - timedelta(days=1)) for i in (1, 2, 3)]
+                 + [("User", 4, "ok", NOW - timedelta(hours=10))])
+    D = timedelta(days=1)
+    games = pl.DataFrame(
+        [  # (tipo, creador, juego, creado, visitas)
+            ("Group", 1, 100, NOW - 400 * D, 5_000_000),   # hit
+            ("Group", 1, 101, NOW - 3 * D, 10),            # ... y lanzó hace 3 días → activo
+            ("Group", 2, 200, NOW - 400 * D, 5_000_000),   # hit pero sin lanzamientos → no
+            ("Group", 3, 300, NOW - 2 * D, 900),           # lanzó pero sin hit → no
+            ("User", 4, 400, NOW - 400 * D, 2_000_000),    # activo con hit, pero consultado
+            ("User", 4, 401, NOW - 5 * D, 1),              # hace 10 h → al día
+        ],
+        schema={"creator_type": pl.Utf8, "creator_id": pl.Int64, "universe_id": pl.Int64,
+                "created_at": rc.TS, "place_visits": pl.Int64}, orient="row",
+    ).with_columns(pl.lit(NOW - D).cast(rc.TS).alias("snapshot_at"))
+    write_partition(games, tmp_path, "roblox", "creator_games", NOW - D, "cg")
+
+    hot = rc.active_hit_creators(tmp_path, NOW, cfg["roblox"])
+    assert sorted(hot.rows()) == [("Group", 1), ("User", 4)]
+    dim = rc.read_dimension(tmp_path, "roblox", rc.GAMES_SCHEMA, "universe_id")
+    order, counts = rc.select_creators(dim, rc.last_checks(tmp_path), NOW, 7, hot, 1)
+    assert order == [("Group", 1)]
+    assert counts == {"nuevos": 0, "activos con hits": 1, "vencidos": 0, "al día": 3}
 
 
 def test_parse_games():

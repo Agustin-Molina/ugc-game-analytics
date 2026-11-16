@@ -145,6 +145,8 @@ def assign_roblox_tiers(
         (is_new.fill_null(False), HOT, "new"),
         (pl.col("max_window") >= warm["min_ccu"], WARM, f"ccu>={warm['min_ccu']}"),
         (pl.col("chart_warm").fill_null(False), WARM, "chart_7d"),
+        (pl.col("created_at") >= now - timedelta(days=warm.get("new_max_age_days", 0)),
+         WARM, "new_launch"),
         (pl.col("max_window").is_null(), COLD, "no_data"),
     ]
     tier_expr = pl.when(rules_list[0][0]).then(pl.lit(rules_list[0][1]))

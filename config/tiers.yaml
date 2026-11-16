@@ -25,6 +25,8 @@ roblox:
   warm:                    # si no es hot; basta con UNA señal dentro de window_days
     min_ccu: 20            # pico de playing >= 20
     chart_days: 7          # o apareció en un chart en los últimos 7 días
+    new_max_age_days: 30   # o creado hace <= 30 días: los lanzamientos chicos se miden a diario
+                           # (en cold, una foto por semana, no se vería cómo crecen o se apagan)
 
   # Todo lo demás es cold, incluidos los juegos sin ninguna observación en la ventana
   # (privados/borrados): se reintentan una vez por semana.

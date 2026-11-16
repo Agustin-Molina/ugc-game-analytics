@@ -69,3 +69,16 @@ roblox:
   creators_max_pages: 5             # hasta 500 juegos por grupo, 250 por usuario
   creators_refresh_days: 7          # cada creador se vuelve a consultar una vez por semana
   creators_budget_minutes: 70       # ~1.900 grupos por corrida; la carga inicial (~4.800) en 3 días
+  # Creadores "activos con hits" (algún juego >= creators_hit_visits y un juego creado en los
+  # últimos creators_active_days): se consultan todos los días para captar sus lanzamientos el
+  # primer día. Medido 2026-11-16: ~490 grupos + ~90 usuarios (~18 min de la corrida diaria).
+  creators_hit_visits: 1000000
+  creators_active_days: 30
+  creators_hit_refresh_days: 1
+  # La corrida horaria empieza a trackear los juegos nuevos de creadores conocidos (tabla
+  # creator_games): creados hace <= creators_new_game_days y con alguna visita (sin visitas
+  # suelen ser places vacíos). Medido 2026-11-16: ~2.500 sin trackear de los últimos 60 días.
+  creators_new_game_days: 60
+  creators_new_min_visits: 1
+  creators_lookback_days: 8         # cubre el refresco semanal de cada creador
+  creators_new_per_run: 500         # tope por corrida horaria (el resto entra en las siguientes)

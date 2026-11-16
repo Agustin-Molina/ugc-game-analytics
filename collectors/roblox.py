@@ -1,8 +1,11 @@
 """Colector horario de Roblox.
 
 1. Charts de explore (`get-sorts`, device=all, country=all) → `chart_positions`.
-2. Descubrimiento: resultados recientes de la búsqueda por keywords (`search_positions`,
-   los escribe `collectors.roblox_search` 1 vez por día) con jugadores y sin trackear.
+2. Descubrimiento de juegos sin trackear:
+   - resultados recientes de la búsqueda por keywords con jugadores (`search_positions`,
+     los escribe `collectors.roblox_search` 1 vez por día);
+   - juegos nuevos de creadores conocidos (`creator_games`, los escribe
+     `collectors.roblox_creators`): así los lanzamientos entran el día que se publican.
 3. Universo a consultar = charts ∪ descubiertos ∪ juegos trackeados que tocan según su tier
    (hot: cada hora; warm: diario; cold: semanal; ver `config/tiers.yaml`).
 4. Detalles en lotes de 50 y votos en lotes de 100 → `snapshots`.
@@ -384,6 +387,39 @@ def discover_from_search(
     return cand["universe_id"].to_list()
 
 
+CREATOR_COLS = {"universe_id": pl.Int64, "snapshot_at": TS, "creator_type": pl.Utf8,
+                "creator_id": pl.Int64, "created_at": TS, "place_visits": pl.Int64}
+
+
+def discover_from_creators(
+    creator_hist: pl.DataFrame, known: set[int], rcfg: dict, meta: dict[int, dict],
+    now: datetime,
+) -> list[int]:
+    """Juegos nuevos de creadores conocidos (`creator_games`) que todavía no se trackean.
+
+    La búsqueda y los charts encuentran los juegos cuando ya crecieron (~19 días después de
+    creados, medido 2026-11-16); los creadores ya conocidos, el día que publican. Entran los
+    creados hace <= creators_new_game_days con >= creators_new_min_visits visitas, del más
+    nuevo al más viejo, hasta creators_new_per_run. `discovered_via = creator:<tipo>:<id>`.
+    """
+    if creator_hist.is_empty():
+        return []
+    cand = (
+        creator_hist.filter(
+            (pl.col("created_at") >= now - timedelta(days=int(rcfg["creators_new_game_days"])))
+            & (pl.col("place_visits") >= int(rcfg["creators_new_min_visits"]))
+            & ~pl.col("universe_id").is_in(list(known))
+        )
+        .sort("created_at", "snapshot_at", descending=True)
+        .unique("universe_id", keep="first", maintain_order=True)
+        .head(int(rcfg["creators_new_per_run"]))
+    )
+    for r in cand.iter_rows(named=True):
+        meta.setdefault(r["universe_id"],
+                        {"via": f"creator:{r['creator_type'].lower()}:{r['creator_id']}"})
+    return cand["universe_id"].to_list()
+
+
 async def run(
     data_dir: Path,
     limit: int | None,
@@ -407,6 +443,12 @@ async def run(
     )
     if search_hist is None:
         search_hist = pl.DataFrame(schema=SEARCH_COLS)
+    creator_hist = tiers.read_recent(
+        data_dir, PLATFORM, "creator_games", list(CREATOR_COLS),
+        started - timedelta(days=float(rcfg["creators_lookback_days"])),
+    )
+    if creator_hist is None:
+        creator_hist = pl.DataFrame(schema=CREATOR_COLS)
     due, due_counts = tiers.select_due(dim, last_obs, started, rules["cadence"])
 
     async with Http(cfg) as http:
@@ -424,7 +466,17 @@ async def run(
             f"{rcfg['search_lookback_hours']} h)"
         )
 
-        ids = list(dict.fromkeys(chart_ids + due + search_new))
+        creator_new = discover_from_creators(
+            creator_hist, set(dim[KEY].to_list()) | set(chart_ids) | set(search_new), rcfg,
+            chart_meta, started,
+        )
+        summary.notes.append(
+            f"descubiertos por creadores: {len(creator_new)} "
+            f"(de {creator_hist.height} juegos de creadores de los últimos "
+            f"{rcfg['creators_lookback_days']} días)"
+        )
+
+        ids = list(dict.fromkeys(chart_ids + due + search_new + creator_new))
         if limit:
             ids = ids[:limit]
         summary.notes.append(

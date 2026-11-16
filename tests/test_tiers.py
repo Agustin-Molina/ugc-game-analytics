@@ -22,9 +22,10 @@ def charts(rows: list[tuple[int, datetime]]) -> pl.DataFrame:
 
 def test_assign_roblox_tiers_rules():
     dim = pl.DataFrame(
-        {"universe_id": list(range(1, 10)),
+        {"universe_id": list(range(1, 12)),
          "created_at": [NOW - timedelta(days=400)] * 4 + [NOW - timedelta(days=3)]
-         + [NOW - timedelta(days=400)] * 4},
+         + [NOW - timedelta(days=400)] * 4
+         + [NOW - timedelta(days=10), NOW - timedelta(days=40)]},
         schema={"universe_id": pl.Int64, "created_at": TS},
     )
     s = snaps([
@@ -37,6 +38,8 @@ def test_assign_roblox_tiers_rules():
         (7, NOW - 24 * H, 3), (7, NOW, 3),             # nada → cold
         (8, NOW - 24 * H, 900), (8, NOW, 1000),        # crecimiento chico pero >= 1000 → hot
         # 9: sin observaciones → cold no_data
+        (10, NOW, 2),                                  # creado hace 10 días, chico → warm
+        (11, NOW, 2),                                  # creado hace 40 días, chico → cold
     ])
     c = charts([(1, NOW - 10 * H), (6, NOW - timedelta(days=5))])
     got = tiers.assign_roblox_tiers(dim, s, c, NOW, RULES).sort("universe_id")
@@ -50,6 +53,8 @@ def test_assign_roblox_tiers_rules():
         (7, "cold", "inactive"),
         (8, "hot", "ccu>=1000"),
         (9, "cold", "no_data"),
+        (10, "warm", "new_launch"),
+        (11, "cold", "inactive"),
     ]
 
 

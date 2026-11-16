@@ -12,7 +12,12 @@ Ordenan del más nuevo al más viejo; una página alcanza para casi todos. Grupo
 
 Selección por corrida, con presupuesto de tiempo (el límite de grupos es el cuello de botella):
 1. creadores nunca consultados, primero los de juegos hot, después warm y cold;
-2. después, los que no se consultan hace `creators_refresh_days`, del más viejo al más nuevo.
+2. creadores activos con hits (algún juego >= `creators_hit_visits` y un lanzamiento en los
+   últimos `creators_active_days`): todos los días, para captar sus juegos nuevos el día 1;
+3. después, los que no se consultan hace `creators_refresh_days`, del más viejo al más nuevo.
+
+Los juegos nuevos que aparecen acá los empieza a trackear la corrida horaria
+(`collectors.roblox.discover_from_creators`).
 
 Tablas:
 - `creator_games` (snapshot, append): una fila por juego de cada creador consultado.
@@ -52,6 +57,7 @@ from collectors.common import (
     write_partition,
 )
 from collectors.roblox import GAMES_SCHEMA
+from pipeline import tiers
 
 PLATFORM = "roblox"
 log = logging.getLogger("collectors.roblox_creators")
@@ -97,9 +103,36 @@ def last_checks(data_dir: Path) -> pl.DataFrame:
     )
 
 
+def active_hit_creators(data_dir: Path, now: datetime, rcfg: dict) -> pl.DataFrame:
+    """Creadores con algún juego >= creators_hit_visits que publicaron un juego en los
+    últimos creators_active_days, según su última consulta (creator_type, creator_id)."""
+    cols = ["snapshot_at", "creator_type", "creator_id", "universe_id", "created_at",
+            "place_visits"]
+    since = now - timedelta(days=int(rcfg["creators_refresh_days"]) + 2)
+    games = tiers.read_recent(data_dir, PLATFORM, "creator_games", cols, since)
+    if games is None or games.is_empty():
+        return frame([], {"creator_type": pl.Utf8, "creator_id": pl.Int64})
+    latest = games.sort("snapshot_at").unique(["creator_type", "creator_id", "universe_id"],
+                                              keep="last")
+    return (
+        latest.group_by("creator_type", "creator_id")
+        .agg(pl.col("place_visits").max().alias("best"),
+             pl.col("created_at").max().alias("newest"))
+        .filter((pl.col("best") >= int(rcfg["creators_hit_visits"]))
+                & (pl.col("newest") >= now - timedelta(days=int(rcfg["creators_active_days"]))))
+        .select("creator_type", "creator_id")
+    )
+
+
 def select_creators(dim: pl.DataFrame, checks: pl.DataFrame, now: datetime,
-                    refresh_days: int) -> tuple[list[Creator], dict[str, int]]:
-    """Creadores en orden de prioridad + conteos (nuevos, vencidos, al día)."""
+                    refresh_days: int, hot: pl.DataFrame | None = None,
+                    hot_refresh_days: float = 1) -> tuple[list[Creator], dict[str, int]]:
+    """Creadores en orden de prioridad + conteos.
+
+    1. nunca consultados (primero los de juegos hot); 2. activos con hits (`hot`) que no se
+    consultan hace `hot_refresh_days` (con 6 h de margen: la corrida diaria no sale siempre
+    a la misma hora); 3. el resto, cada `refresh_days`, del más viejo al más nuevo.
+    """
     creators = (
         dim.filter(pl.col("creator_id").is_not_null()
                    & pl.col("creator_type").is_in(["User", "Group"]))
@@ -108,13 +141,25 @@ def select_creators(dim: pl.DataFrame, checks: pl.DataFrame, now: datetime,
         .agg(pl.col("rank").min())
         .join(checks, on=["creator_type", "creator_id"], how="left")
     )
+    if hot is not None and not hot.is_empty():
+        creators = creators.join(hot.with_columns(pl.lit(True).alias("hot")),
+                                 on=["creator_type", "creator_id"], how="left")
+    else:
+        creators = creators.with_columns(pl.lit(None, pl.Boolean).alias("hot"))
+    is_hot = pl.col("hot").fill_null(False)
     new = creators.filter(pl.col("last_at").is_null()).sort("rank", "creator_id")
-    due = creators.filter(pl.col("last_at") < now - timedelta(days=refresh_days)).sort(
-        "last_at", "creator_id")
-    order = [(t, int(i)) for t, i in new.select("creator_type", "creator_id").iter_rows()]
-    order += [(t, int(i)) for t, i in due.select("creator_type", "creator_id").iter_rows()]
-    counts = {"nuevos": new.height, "vencidos": due.height,
-              "al día": creators.height - new.height - due.height}
+    hot_due = creators.filter(
+        is_hot & (pl.col("last_at") < now - timedelta(days=hot_refresh_days, hours=-6))
+    ).sort("last_at", "creator_id")
+    due = creators.filter(
+        ~is_hot & (pl.col("last_at") < now - timedelta(days=refresh_days))
+    ).sort("last_at", "creator_id")
+    order = []
+    for part in (new, hot_due, due):
+        order += [(t, int(i)) for t, i in part.select("creator_type", "creator_id").iter_rows()]
+    counts = {"nuevos": new.height, "activos con hits": hot_due.height,
+              "vencidos": due.height,
+              "al día": creators.height - new.height - hot_due.height - due.height}
     return order, counts
 
 
@@ -208,7 +253,9 @@ async def run(data_dir: Path, cfg: dict, limit: int | None = None,
 
     dim = read_dimension(data_dir, PLATFORM, GAMES_SCHEMA, "universe_id")
     order, counts = select_creators(dim, last_checks(data_dir), started,
-                                    int(rcfg["creators_refresh_days"]))
+                                    int(rcfg["creators_refresh_days"]),
+                                    active_hit_creators(data_dir, started, rcfg),
+                                    float(rcfg["creators_hit_refresh_days"]))
     if limit:
         order = order[:limit]
     groups = [c for c in order if c[0] == "Group"]
