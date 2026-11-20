@@ -40,7 +40,7 @@ def open_db(data_dir: Path) -> duckdb.DuckDBPyConnection:
 
 def has_table(con: duckdb.DuckDBPyConnection, name: str) -> bool:
     return bool(con.execute("select count(*) from duckdb_views() where view_name = ?",
-                            [name]).fetchone()[0])
+                            [name]).fetchall()[0][0])
 
 
 def _df(con: duckdb.DuckDBPyConnection, sql: str, params: list | None = None) -> pd.DataFrame:
@@ -235,6 +235,27 @@ def game_events(con, platform: str, game_id: str) -> pd.DataFrame:
     return _df(con, f"""
         select detected_at, event_type, old_value, new_value from {platform}_events
         where {key} = ? order by detected_at desc limit 100""", [game_id])
+
+
+# ------------------------------------------------------------------ trends
+
+def trends(con, signal: str, level: str) -> pd.DataFrame:
+    """Temas con una señal (port_to_fortnite | port_to_roblox | crossed), más activos primero."""
+    return _df(con, """
+        select * from cross_platform_trends where signal = ? and level = ?
+        order by rb_new_30d + fn_new_30d desc,
+                 coalesce(rb_visits_w1, 0) / 1000 + coalesce(fn_players_w1, 0) desc""",
+               [signal, level])
+
+
+def trend_lags(con) -> pd.DataFrame:
+    """Formatos que cruzaron con las dos fechas conocidas: cuánto tardaron."""
+    return _df(con, """
+        select theme, first_platform, lag_days, rb_first_at, fn_first_at, rb_games, fn_games,
+               rb_top_game, fn_top_island
+        from cross_platform_trends
+        where level = 'family' and lag_days is not null and rb_games > 0 and fn_games > 0
+        order by fn_first_at desc""")
 
 
 # ------------------------------------------------------------------ clones

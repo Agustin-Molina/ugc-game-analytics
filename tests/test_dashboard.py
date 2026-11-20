@@ -89,6 +89,19 @@ TABLES = {
                0.05 as demand_growth_ex_top1, 1.5 as opportunity_score_ex_top1,
                12 as islands_growing, 9 as islands_falling, 4 as new_islands_30d,
                0.1 as new_islands_demand_share""",
+    "cross_platform_trends": f"""
+        select * from (values
+          ('family', 'ragdoll sandbox', 'sandbox_building', 3, 0, 1, 3, 0, 0, 1.0,
+           {T} - interval 20 day, null::timestamptz, null::boolean, 'roblox_only', null::int,
+           2e6, null::double, null::double, null::double, 'Ragdoll Sandbox', null,
+           'port_to_fortnite'),
+          ('family', 'seed throw', 'tycoon', 1, 1, 0, 1, 1, 1, 1.0,
+           {T} - interval 30 day, {T} - interval 11 day, true, 'roblox', 19,
+           5e6, null, 900.0, null, 'Throw a Seed', 'THROW A SEED!', 'crossed'))
+        t(level, theme, genre, rb_games, fn_games, rb_new_7d, rb_new_30d, fn_new_7d,
+          fn_new_30d, new_share, rb_first_at, fn_first_at, fn_first_known, first_platform,
+          lag_days, rb_visits_w1, rb_visits_growth, fn_players_w1, fn_players_growth,
+          rb_top_game, fn_top_island, signal)""",
     "title_clones": f"""
         select * from (values ('roblox', '1', 'brainrot steal', 2, 1, 1,
                                {T} - interval 10 day, 1),
@@ -130,13 +143,17 @@ def test_data_functions(export_dir):
     assert data.game_info(con, "fortnite", "nope") is None
     assert len(data.game_charts(con, "1")) == 1
     assert len(data.game_events(con, "fortnite", "1111-2222-3333")) == 1
+    assert data.trends(con, "port_to_fortnite", "family")["theme"].tolist() == [
+        "ragdoll sandbox"]
+    assert data.trends(con, "port_to_roblox", "family").empty
+    assert data.trend_lags(con)["lag_days"].tolist() == [19]
     fams = data.clone_families(con, 2, True)
     assert fams["family"].tolist() == ["brainrot steal"]
     assert len(data.clone_members(con, "brainrot steal")) == 2
 
 
-PAGES = ["views/overview.py", "views/niches.py", "views/launches.py", "views/game.py",
-         "views/clones.py"]
+PAGES = ["views/overview.py", "views/niches.py", "views/trends.py", "views/launches.py",
+         "views/game.py", "views/clones.py"]
 
 
 @pytest.mark.parametrize("page", PAGES)

@@ -125,6 +125,15 @@ tables:
       genre, plus how much of it new games take. Only games seen in charts or searches are
       tracked, so small competitors are undercounted. Preliminary until two weeks of
       coverage exist.
+  cross_platform_trends:
+    view: cross_platform_trends
+    description: >-
+      Formats growing on one platform and arriving (or not yet) on the other. One row per
+      theme: a title-clone family or a single title keyword, with games, new launches and
+      weekly demand on each platform, which platform had it first and with how many days of
+      lag, and a signal (port_to_fortnite, port_to_roblox, crossed). Matching is by title
+      only, so the same format under another name is missed (e.g. Roblox "obby" vs Fortnite
+      "parkour").
   title_clones:
     view: title_clones
     description: >-
@@ -315,3 +324,30 @@ columns:
   games_falling: Games whose weekly visits went down (with >= 1,000 visits in their bigger week).
   new_islands_30d: Active islands that appeared in the catalog in the last 30 days (excluding the initial catalog load).
   new_islands_demand_share: Share of the genre's weekly players taken by islands that appeared in the last 30 days.
+  # cross_platform_trends
+  level: "Theme level: family (a title-clone family, the exact format) or keyword (one title word, groups a whole wave)."
+  theme: Theme key (family key words or the keyword).
+  genre: Most common unified genre of the theme's games.
+  rb_games: Tracked Roblox games in the theme.
+  fn_games: Fortnite islands in the theme (excluding Epic's own).
+  rb_new_7d: Roblox games in the theme created in the last 7 days.
+  rb_new_30d: Roblox games in the theme created in the last 30 days.
+  fn_new_7d: Fortnite islands in the theme that appeared in the last 7 days (after the initial catalog load).
+  fn_new_30d: Fortnite islands in the theme that appeared in the last 30 days (after the initial catalog load).
+  new_share: Share of the theme's games that are new (30 days). Keywords need >= 0.2 to count as a wave.
+  rb_first_at: Creation date of the theme's first Roblox game.
+  fn_first_at: First appearance of the theme in the Fortnite catalog (islands present at the initial load show that date).
+  fn_first_known: false when the theme's first Fortnite island already existed at the initial catalog load (its real date is unknown).
+  first_platform: "Where the theme appeared first: roblox, fortnite, unknown, roblox_only or fortnite_only."
+  lag_days: Days between the first appearance on each platform, when both dates are known and <= 180 days.
+  rb_visits_w1: Weekly visits of the theme's Roblox games.
+  rb_visits_growth: Week-over-week visits growth of the theme's Roblox games.
+  fn_players_w1: Weekly unique players of the theme's Fortnite islands.
+  fn_players_growth: Week-over-week growth of the theme's Fortnite players.
+  rb_top_game: Most played Roblox game of the theme.
+  fn_top_island: Most played Fortnite island of the theme.
+  signal: >-
+    port_to_fortnite / port_to_roblox: growing on one platform (>= 3 new games in 30 days
+    and real demand) and nearly absent on the other, where it has no big demand either;
+    Fortnite build/combat formats are never marked for Roblox. crossed: on both platforms
+    with new copies. Keywords only get a signal when they are a wave (new_share >= 0.2).

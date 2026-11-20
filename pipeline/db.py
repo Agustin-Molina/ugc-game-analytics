@@ -22,6 +22,8 @@ Vistas creadas (solo las de tablas que ya tienen archivos):
 - `fortnite_island_demand`, `fortnite_niche_opportunity`, `roblox_game_demand`,
   `roblox_niche_opportunity`     demanda semanal por juego y score de oportunidad por nicho
                                  (pipeline/opportunity.py)
+- `trend_games`, `cross_platform_trends`  formatos que crecen en una plataforma y llegan (o
+                                 no) a la otra (pipeline/trends.py)
 
 `python -m pipeline.db [--data-dir PATH]` lista las vistas y sus filas.
 """
@@ -37,6 +39,7 @@ from collectors.common import resolve_data_dir
 from pipeline.features import register as register_features
 from pipeline.metrics import register as register_metrics
 from pipeline.opportunity import register as register_opportunity
+from pipeline.trends import register as register_trends
 
 DIMENSION_KEYS = {"roblox": "universe_id", "fortnite": "island_code"}
 # otros logs de cambios (valid_from): tabla → clave
@@ -109,6 +112,7 @@ def connect(
         register_features(con)
         register_metrics(con)
         register_opportunity(con)
+        register_trends(con)
     return con
 
 

@@ -100,6 +100,9 @@ También es un proyecto de portfolio de data: código limpio, README claro, data
       crecimiento se completa solo con 2 semanas de datos: Fortnite ~17/11, Roblox ~24/11).
 - [ ] Definir éxito: "explosión" (peak CCU >= X en 14 días desde first_traction) y
       "sostenido" (CCU día 30–60 >= 30% del peak). Umbrales por plataforma.
+- [x] Tendencias entre plataformas (`pipeline/trends.py`, `cross_platform_trends`): formatos que
+      crecen en una plataforma y llegan (o no) a la otra, con la demora. Agregado 2026-11-20:
+      el nicho/género es una lente gruesa; muchas oportunidades son formatos que cruzan.
 - [ ] Modelo de detección temprana (necesita ~6–8 semanas de lanzamientos observados).
 - [x] Dashboard (Streamlit o similar) + publicación periódica en Kaggle (`dashboard/`, corre
       local sobre el export; desplegarlo en Streamlit Cloud queda para el lanzamiento público).

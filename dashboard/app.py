@@ -23,6 +23,7 @@ VIEWS = Path(__file__).parent / "views"
 nav = st.navigation([
     st.Page(VIEWS / "overview.py", title="Overview", icon=":material/insights:", default=True),
     st.Page(VIEWS / "niches.py", title="Niches", icon=":material/grid_view:"),
+    st.Page(VIEWS / "trends.py", title="Trends", icon=":material/trending_up:"),
     st.Page(VIEWS / "launches.py", title="Launches", icon=":material/rocket_launch:"),
     st.Page(VIEWS / "game.py", title="Game lookup", icon=":material/search:"),
     st.Page(VIEWS / "clones.py", title="Clones", icon=":material/content_copy:"),

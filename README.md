@@ -24,7 +24,7 @@ Los datos viven en un repo aparte: **[ugc-game-analytics-data](https://github.co
 | 0 — Colector mínimo | ✅ todos los crons activos (2026-11-10) |
 | 1 — Robustez (tiers, calidad, keywords, compactación) | ✅ completa (2026-11-11) |
 | 2 — Enriquecimiento | en curso: ícono, miniaturas, gamepasses, géneros unificados, features de título, historial del creador, clones y métricas derivadas listos; falta mudar el almacenamiento (~500 MB) |
-| 3 — Análisis | en curso: notebook de EDA y score de oportunidad por nicho en las dos plataformas (preliminar hasta tener 2 semanas) |
+| 3 — Análisis | en curso: notebook de EDA, dashboard, score de oportunidad por nicho (robusto a un solo hit) y tendencias entre plataformas; faltan definir éxito y el modelo de detección temprana |
 
 ## Fuentes
 
@@ -293,6 +293,31 @@ uv run python -m pipeline.opportunity --platform roblox
 - **Sesgo**: solo están los juegos vistos en charts o búsquedas, así que la competencia chica
   está subcontada. Sirve para comparar nichos entre sí, no como censo.
 
+### Tendencias entre plataformas (Fase 3)
+
+El nicho (género) es una lente gruesa: muchas oportunidades son **formatos** que cruzan de
+una plataforma a la otra. "Throw Food For Animals" salió en Roblox el 18/09, explotó, y en
+noviembre Fortnite ya tenía 17+ copias, con nuevas apareciendo cada pocos días.
+[`pipeline/trends.py`](pipeline/trends.py) arma `cross_platform_trends`:
+
+- **Tema** en dos niveles: la familia de clones (el formato exacto) y cada palabra del título
+  (agrupa una ola que las familias parten: "ragdoll sandbox", "physic ragdoll", …). Una
+  palabra solo cuenta como ola si ≥ 20 % de sus juegos son nuevos; si no, es genérica.
+- Por tema y plataforma: juegos, nuevos en 7 y 30 días, primera aparición, demanda semanal y
+  su crecimiento, y el juego más jugado.
+- `first_platform` y `lag_days`: dónde apareció primero y con cuántos días de demora llegó a
+  la otra. Fortnite no publica fechas de creación, así que solo se miden los formatos que
+  llegaron a Fortnite después del inicio del tracking (10/11/2026).
+- `signal`: `port_to_fortnite` / `port_to_roblox` (crece en una, casi no existe ni tiene
+  demanda en la otra; los formatos de construir y combatir de Fortnite no se marcan para
+  Roblox) y `crossed` (en las dos, con copias nuevas).
+
+Medido el 2026-11-20: **96 de 97** formatos que cruzaron con fecha conocida fueron de Roblox
+a Fortnite, con una demora mediana de **36 días** (la mitad entre 20 y 57). Ojo con el sesgo:
+que Fortnite no tenga fechas de creación hace más fácil medir esa dirección. El
+emparejamiento es por título, así que el mismo formato con otro nombre no se detecta (Roblox
+dice *obby* donde Fortnite dice *parkour*), lo que debilita sobre todo `port_to_roblox`.
+
 ### Leer con DuckDB
 
 ```python
@@ -379,6 +404,8 @@ cd notebooks && uv run --group notebook jupyter nbconvert --to notebook --execut
   sus curvas.
 - **Game lookup**: búsqueda por nombre en las dos plataformas, con serie temporal, perfil,
   historial del creador, familia de clones, charts de Roblox y cambios detectados.
+- **Trends**: formatos que crecen en una plataforma y todavía no llegaron a la otra, los que
+  ya cruzaron y cuánto tardaron.
 - **Clones**: familias de títulos y sus miembros.
 
 ```bash
