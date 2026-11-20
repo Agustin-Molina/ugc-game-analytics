@@ -342,7 +342,10 @@ def check_fortnite(con: duckdb.DuckDBPyConnection, now: datetime, rules: dict[st
                                     or recommendations < 0 or avg_minutes_per_player < 0),
                    count(*) filter (where retention_d1 not between 0 and 1
                                     or retention_d7 not between 0 and 1),
-                   count(*) filter (where peak_ccu > unique_players),
+                   -- solo buckets cerrados: con el día abierto Epic a veces reporta
+                   -- el pico antes de terminar de contar los únicos
+                   count(*) filter (where peak_ccu > unique_players
+                                    and not coalesce(is_partial, false)),
                    count(*) filter (where avg_minutes_per_player >
                                     case interval when 'hour' then 60 else 1440 end)
             from fortnite_snapshots where {WINDOW}

@@ -25,7 +25,7 @@ F_SNAP = {"island_code": pl.Utf8, "interval": pl.Utf8, "bucket_start": TS, "snap
           "plays": pl.Int64, "unique_players": pl.Int64, "peak_ccu": pl.Int64,
           "avg_minutes_per_player": pl.Float64, "minutes_played": pl.Int64,
           "favorites": pl.Int64, "recommendations": pl.Int64, "retention_d1": pl.Float64,
-          "retention_d7": pl.Float64}
+          "retention_d7": pl.Float64, "is_partial": pl.Boolean}
 
 
 def by_name(checks: list[quality.Check]) -> dict[str, quality.Check]:
@@ -121,6 +121,10 @@ def test_fortnite(tmp_path, rules):
         {"island_code": "A", "interval": "hour", "bucket_start": NOW - 20 * H,
          "snapshot_at": t, "plays": 10, "unique_players": 8, "peak_ccu": 3,
          "avg_minutes_per_player": 75.0},
+        # día todavía abierto: pico > únicos no cuenta
+        {"island_code": "B", "interval": "day", "bucket_start": NOW - 8 * H,
+         "snapshot_at": t, "plays": 8, "unique_players": 7, "peak_ccu": 10,
+         "avg_minutes_per_player": 7.4, "is_partial": True},
     ], schema=F_SNAP)
     write_partition(snaps, tmp_path, "fortnite", "snapshots", t, "f1")
 
