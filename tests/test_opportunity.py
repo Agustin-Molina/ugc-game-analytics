@@ -15,21 +15,25 @@ def day(d: int) -> datetime:
 @pytest.fixture
 def con(tmp_path):
     games = pl.DataFrame({
-        "island_code": ["A", "B", "C", "D", "E"],
-        "title": ["Tycoon A", "Tycoon B", "Horror C", "Tycoon D", "Epic E"],
-        "tags": [["tycoon"], ["tycoon"], ["horror"], ["tycoon"], ["tycoon"]],
-        "category": [None] * 5,
-        "creator_code": ["x", "y", "z", "w", "epic"],
-        "is_listed": [True] * 5,
-        "first_seen_at": [day(1)] * 5,
-        "first_traction_at": [None] * 5,
+        "island_code": ["A", "B", "C", "D", "E", "F", "G"],
+        "title": ["Tycoon A", "Tycoon B", "Horror C", "Tycoon D", "Epic E", "Tycoon F",
+                  "Tycoon G"],
+        "tags": [["tycoon"], ["tycoon"], ["horror"], ["tycoon"], ["tycoon"], ["tycoon"],
+                 ["tycoon"]],
+        "category": [None] * 7,
+        "creator_code": ["x", "y", "z", "w", "epic", "v", "u"],
+        "is_listed": [True] * 7,
+        # G apareció en el catálogo después de la carga inicial → isla nueva
+        "first_seen_at": [day(1)] * 6 + [day(20)],
+        "first_traction_at": [None] * 7,
     }, schema_overrides={"first_seen_at": TS, "first_traction_at": TS})
     write_dimension_changes(games.clear(), games, "island_code", tmp_path, "fortnite", day(1),
                             "g")
-    # A: consultada el 10 y el 24 → cobertura 3..23 (dos semanas); B, C, E: solo el 24
+    # A y F: consultadas el 10 y el 24 → cobertura 3..23 (dos semanas); B, C, E, G: solo el 24
     log = pl.DataFrame(
         [{"island_code": c, "snapshot_at": day(d) + timedelta(hours=5), "interval": "day",
-          "status": "ok"} for c, d in [("A", 10), ("A", 24), ("B", 24), ("C", 24), ("E", 24)]]
+          "status": "ok"} for c, d in [("A", 10), ("A", 24), ("B", 24), ("C", 24), ("E", 24),
+                                       ("F", 10), ("F", 24), ("G", 24)]]
         + [{"island_code": "C", "snapshot_at": day(24), "interval": "hour", "status": "ok"}],
         schema_overrides={"snapshot_at": TS})
     write_partition(log, tmp_path, "fortnite", "fetch_log", day(24), "l")
@@ -40,6 +44,9 @@ def con(tmp_path):
     snaps += [("B", d, 100) for d in (17, 18, 19)]           # 300, sin semana 0
     snaps += [("B", 24, 999)]                                # fuera de la ventana (hoy)
     snaps += [("E", d, 10_000) for d in range(17, 24)]       # Epic: no cuenta
+    snaps += [("F", d, 100) for d in range(10, 17)]          # 700 → 630: cae
+    snaps += [("F", d, 90) for d in range(17, 24)]
+    snaps += [("G", d, 50) for d in (21, 22, 23)]            # nueva: 150
     df = pl.DataFrame(
         [{"island_code": c, "interval": "day", "bucket_start": day(d),
           "snapshot_at": day(24), "is_partial": False, "unique_players": u, "peak_ccu": u,
@@ -65,21 +72,29 @@ def test_niche_opportunity(con):
     n = {r["genre_unified"]: r for r in
          con.sql("select * from fortnite_niche_opportunity").pl().to_dicts()}
     t = n["tycoon"]
-    assert t["islands_listed"] == 3 and t["islands_active"] == 2  # sin la de Epic
-    assert t["demand_w1"] == 420
-    assert t["demand_growth"] == pytest.approx(120 / 70 - 1)
-    assert t["demand_per_active_island"] == pytest.approx(210)
-    assert t["median_island_demand"] == pytest.approx(210)
+    assert t["islands_listed"] == 5 and t["islands_active"] == 4  # sin la de Epic
+    assert t["demand_w1"] == 120 + 300 + 630 + 150
+    # comparables (A y F): 750 contra 770
+    assert t["demand_growth"] == pytest.approx(750 / 770 - 1)
+    assert t["demand_per_active_island"] == pytest.approx(300)
+    assert t["median_island_demand"] == pytest.approx((150 + 300) / 2)
     assert t["top10_share"] == pytest.approx(1.0)
-    assert t["opportunity_score"] == pytest.approx((120 - 70) / 2)
+    assert t["opportunity_score"] == pytest.approx((750 - 770) / 4)
+    # la que más ganó es A (+50): sin ella queda F sola, que cae
+    assert t["demand_growth_ex_top1"] == pytest.approx(630 / 700 - 1)
+    assert t["opportunity_score_ex_top1"] == pytest.approx((750 - 770 - 50) / 4)
+    assert t["islands_growing"] == 1 and t["islands_falling"] == 1
+    assert t["new_islands_30d"] == 1
+    assert t["new_islands_demand_share"] == pytest.approx(150 / 1200)
     h = n["horror"]
     assert h["islands_active"] == 0 and h["demand_w1"] == 0
-    assert h["opportunity_score"] is None
+    assert h["opportunity_score"] is None and h["opportunity_score_ex_top1"] is None
+    assert h["islands_growing"] == 0
 
 
 def test_render(con):
     out = opportunity.render(con)
-    assert "| tycoon | 3 | 2 | 420 | +71% |" in out
+    assert "| tycoon | 5 | 4 | 1,200 | -3% | -10% | 1/1 |" in out
     assert out.index("| tycoon") < out.index("| horror")
 
 
@@ -146,6 +161,10 @@ def test_roblox_niche_opportunity(rcon):
     assert t["new_games_30d"] == 1
     assert t["new_games_visits_share"] == pytest.approx(1500 / 2900)
     assert t["opportunity_score"] == pytest.approx((1400 - 700) / 2)
+    # el único comparable es también el que más ganó: sin él no queda nada que comparar
+    assert t["visits_growth_ex_top1"] is None
+    assert t["opportunity_score_ex_top1"] == pytest.approx(0)
+    assert t["games_growing"] == 1 and t["games_falling"] == 0
     r = n["roleplay"]
     assert r["games_tracked"] == 1 and r["games_active"] == 0
     assert r["opportunity_score"] is None

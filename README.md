@@ -266,6 +266,13 @@ uv run python -m pipeline.opportunity --platform roblox
 - **Score** = jugadores-día ganados en la semana / islas activas (la definición de este
   proyecto). Necesita 14 días de cobertura; hasta entonces la tabla se ordena por la mediana.
 - Sin las islas de Epic, que no compiten con los creadores.
+- **Robusto a un solo hit.** Medido el 2026-11-19, con la primera semana de crecimiento: en
+  casi todos los nichos la isla que más creció explicaba entre el 60 % y el 100 % de la
+  ganancia (racing: una isla de 102k a 1,47 M jugadores). Por eso también hay crecimiento y
+  score **sin la isla que más ganó** (`*_ex_top1`), cuántas islas crecen y cuántas caen
+  (`islands_growing` / `islands_falling`), y qué parte de la demanda se llevan las islas que
+  aparecieron en los últimos 30 días (`new_islands_demand_share`). La tabla se ordena por el
+  score sin la top 1: si un nicho sigue creciendo sin su hit, la demanda es del nicho.
 
 **Roblox** (`roblox_niche_opportunity`):
 
@@ -278,7 +285,9 @@ uv run python -m pipeline.opportunity --platform roblox
 - **Por nicho**: las mismas columnas que Fortnite, más dos señales de entrada que Fortnite no
   tiene, porque no expone la fecha de creación: `new_games_30d` (juegos creados en los
   últimos 30 días) y `new_games_visits_share` (qué parte de las visitas se llevan). Un nicho
-  donde los juegos nuevos se llevan una parte grande todavía le deja lugar a uno más.
+  donde los juegos nuevos se llevan una parte grande todavía le deja lugar a uno más. Y las
+  mismas columnas robustas a un solo hit que Fortnite (`*_ex_top1`, `games_growing` /
+  `games_falling`).
 - **Crecimiento y score**: solo con dos semanas completas entre snapshots reales (desde
   ~2026-11-24 para los juegos hot).
 - **Sesgo**: solo están los juegos vistos en charts o búsquedas, así que la competencia chica

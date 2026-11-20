@@ -303,3 +303,15 @@ columns:
   median_game_visits: Median weekly visits of active games (the typical game).
   new_games_30d: Games in the genre created in the last 30 days.
   new_games_visits_share: Share of the genre's weekly visits taken by games created in the last 30 days.
+  demand_growth_ex_top1: >-
+    Week-over-week demand growth without the island that gained the most. In early weeks a
+    single breakout island explained 60-100% of a niche's growth; if the niche still grows
+    without it, demand is niche-wide.
+  visits_growth_ex_top1: Week-over-week visits growth without the game that gained the most (see demand_growth_ex_top1).
+  opportunity_score_ex_top1: opportunity_score without the game / island that gained the most.
+  islands_growing: Islands whose weekly players went up (with >= 100 players in their bigger week).
+  islands_falling: Islands whose weekly players went down (with >= 100 players in their bigger week).
+  games_growing: Games whose weekly visits went up (with >= 1,000 visits in their bigger week).
+  games_falling: Games whose weekly visits went down (with >= 1,000 visits in their bigger week).
+  new_islands_30d: Active islands that appeared in the catalog in the last 30 days (excluding the initial catalog load).
+  new_islands_demand_share: Share of the genre's weekly players taken by islands that appeared in the last 30 days.

@@ -51,7 +51,10 @@ TABLES = {
         select 'tycoon' as genre_unified, 30 as games_tracked, 25 as games_active,
                1e6 as visits_w1, null::double as visits_growth, 4e4 as visits_per_active_game,
                2e4 as median_game_visits, 0.6 as top10_share, 3 as new_games_30d,
-               0.2 as new_games_visits_share, null::double as opportunity_score""",
+               0.2 as new_games_visits_share, null::double as opportunity_score,
+               null::double as visits_growth_ex_top1,
+               null::double as opportunity_score_ex_top1, 3 as games_growing,
+               2 as games_falling""",
     "fortnite_islands": f"""
         select * from (values
           ('1111-2222-3333', 'Brainrot Steal', 'tycoon', 'hot', 'maker', true,
@@ -82,7 +85,10 @@ TABLES = {
         select 'tycoon' as genre_unified, 300 as islands_listed, 120 as islands_active,
                5e4 as demand_w1, null::double as demand_growth,
                416.0 as demand_per_active_island, 40.0 as median_island_demand,
-               0.7 as top10_share, null::double as opportunity_score""",
+               0.7 as top10_share, null::double as opportunity_score,
+               0.05 as demand_growth_ex_top1, 1.5 as opportunity_score_ex_top1,
+               12 as islands_growing, 9 as islands_falling, 4 as new_islands_30d,
+               0.1 as new_islands_demand_share""",
     "title_clones": f"""
         select * from (values ('roblox', '1', 'brainrot steal', 2, 1, 1,
                                {T} - interval 10 day, 1),
